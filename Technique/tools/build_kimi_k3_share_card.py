@@ -44,16 +44,19 @@ def slice_share_content(markdown: str) -> str:
 def protect_math(markdown: str) -> tuple[str, list[str]]:
     placeholders: list[str] = []
 
+    def marker(index: int) -> str:
+        return f"@@KIMI_MATH_PLACEHOLDER_{index}@@"
+
     def protect_segment(segment: str) -> str:
         def block_repl(match: re.Match[str]) -> str:
             placeholders.append(match.group(0))
-            return f"\n\nKIMI_MATH_PLACEHOLDER_{len(placeholders) - 1}\n\n"
+            return f"\n\n{marker(len(placeholders) - 1)}\n\n"
 
         segment = re.sub(r"\$\$.*?\$\$", block_repl, segment, flags=re.S)
 
         def inline_repl(match: re.Match[str]) -> str:
             placeholders.append(match.group(0))
-            return f"KIMI_MATH_PLACEHOLDER_{len(placeholders) - 1}"
+            return marker(len(placeholders) - 1)
 
         return re.sub(r"(?<!\\)\$(?!\$)(.+?)(?<!\\)\$", inline_repl, segment, flags=re.S)
 
@@ -66,7 +69,10 @@ def protect_math(markdown: str) -> tuple[str, list[str]]:
 
 def restore_math(rendered: str, placeholders: list[str]) -> str:
     for idx, value in enumerate(placeholders):
-        rendered = rendered.replace(f"KIMI_MATH_PLACEHOLDER_{idx}", html.escape(value, quote=False))
+        rendered = rendered.replace(
+            f"@@KIMI_MATH_PLACEHOLDER_{idx}@@",
+            html.escape(value, quote=False),
+        )
     return rendered
 
 

@@ -359,15 +359,7 @@
 </table></div>
 <p>KDA 的核心转向是：不再为每个历史 token 保存一份 KV，而是用固定大小的 recurrent state 承载历史信息。代价是状态更新存在串行依赖，需要专门 kernel 和 context parallelism；收益是 cache 体积、跨节点传输和 prefix 复用都可以重新设计。</p>
 <h3 id="1-2-kda-的基本-recurrence">1.2 KDA 的基本 recurrence</h3>
-<p>K3 technical report 对单头 KDA 的定义如下。设 hidden state 为 $$
-\alpha_t^h=\exp(g_t^h)\in(e^{g_{\min}},1)^{d_k}
-$$0，query/key/value 分别为 $$
-\alpha_t^h=\exp(g_t^h)\in(e^{g_{\min}},1)^{d_k}
-$$1、$$
-\alpha_t^h=\exp(g_t^h)\in(e^{g_{\min}},1)^{d_k}
-$$2，recurrent state 为 $$
-\alpha_t^h=\exp(g_t^h)\in(e^{g_{\min}},1)^{d_k}
-$$3。</p>
+<p>K3 technical report 对单头 KDA 的定义如下。设 hidden state 为 $x_t\in\mathbb{R}^d$，query/key/value 分别为 $q_t,k_t\in\mathbb{R}^{d_k}$、$v_t\in\mathbb{R}^{d_v}$，recurrent state 为 $S_t\in\mathbb{R}^{d_k\times d_v}$。</p>
 <p>$$
 S_t=
 \left(I-\beta_t k_t k_t^\top\right)
@@ -387,27 +379,19 @@ $$</p>
 </thead>
 <tbody>
 <tr>
-<td>$$
-\alpha_t^h=\exp(g_t^h)\in(e^{g_{\min}},1)^{d_k}
-$$4</td>
+<td>$\alpha_t\in(0,1)^{d_k}$</td>
 <td>channel-wise one-step retention factor，决定每个 key channel 的遗忘/保留强度</td>
 </tr>
 <tr>
-<td>$$
-\alpha_t^h=\exp(g_t^h)\in(e^{g_{\min}},1)^{d_k}
-$$5</td>
+<td>$\beta_t\in(0,1)$</td>
 <td>delta-rule write strength，决定当前 token 写入 recurrent state 的强度</td>
 </tr>
 <tr>
-<td>$$
-\alpha_t^h=\exp(g_t^h)\in(e^{g_{\min}},1)^{d_k}
-$$6</td>
+<td>$I-\beta_t k_t k_t^\top$</td>
 <td>delta-rule correction，用当前 key 对旧状态做校正</td>
 </tr>
 <tr>
-<td>$$
-\alpha_t^h=\exp(g_t^h)\in(e^{g_{\min}},1)^{d_k}
-$$7</td>
+<td>$\beta_t k_t v_t^\top$</td>
 <td>当前 token 写入项</td>
 </tr>
 </tbody>
@@ -427,12 +411,8 @@ $$7</td>
 <tbody>
 <tr>
 <td>decay parameterization</td>
-<td>negative-Softplus，log-decay 下界为 $$
-\alpha_t^h=\exp(g_t^h)\in(e^{g_{\min}},1)^{d_k}
-$$8</td>
-<td>scaled sigmoid，把 log-decay 限制在 $$
-\alpha_t^h=\exp(g_t^h)\in(e^{g_{\min}},1)^{d_k}
-$$9</td>
+<td>negative-Softplus，log-decay 下界为 $-\infty$</td>
+<td>scaled sigmoid，把 log-decay 限制在 $(g_{\min},0)$</td>
 <td>避免 chunk 内 reciprocal cumulative decay 过大，减少 BF16 溢出和 diagonal tile 特殊路径</td>
 </tr>
 <tr>
@@ -450,17 +430,11 @@ $$</p>
 <p>$$
 \alpha_t^h=\exp(g_t^h)\in(e^{g_{\min}},1)^{d_k}
 $$</p>
-<p>K3 固定 $$
-\alpha_{t,j}^h&gt;e^{-5}\approx 6.7\times10^{-3}
-$$0。因此每个 retention factor 都满足：</p>
+<p>K3 固定 $g_{\min}=-5$。因此每个 retention factor 都满足：</p>
 <p>$$
 \alpha_{t,j}^h&gt;e^{-5}\approx 6.7\times10^{-3}
 $$</p>
-<p>对 16-token tile，累计 log-decay 落在 $$
-\alpha_{t,j}^h&gt;e^{-5}\approx 6.7\times10^{-3}
-$$1，reciprocal rescaling 小于 $$
-\alpha_{t,j}^h&gt;e^{-5}\approx 6.7\times10^{-3}
-$$2，仍在 BF16 动态范围内。这样 diagonal 和 off-diagonal causal tiles 都可以走 dense Tensor Core GEMM，减少原先 position-pair diagonal path 的瓶颈。</p>
+<p>对 16-token tile，累计 log-decay 落在 $(-80,0)$，reciprocal rescaling 小于 $e^{80}$，仍在 BF16 动态范围内。这样 diagonal 和 off-diagonal causal tiles 都可以走 dense Tensor Core GEMM，减少原先 position-pair diagonal path 的瓶颈。</p>
 <p>K3 的 full-rank output gate 为：</p>
 <p>$$
 y_t=W_o\left[\operatorname{Sigmoid}(W_gx_t)\odot\operatorname{RMSNorm}(\tilde{o}_t)\right]
@@ -551,9 +525,7 @@ $$</p>
 <p>$$
 M_t=\left(I-\beta_t k_t k_t^\top\right)\operatorname{Diag}(\alpha_t)
 $$</p>
-<p>所以某段序列对输入 state 的作用依赖 $$
-\alpha_{t,j}^h&gt;e^{-5}\approx 6.7\times10^{-3}
-$$3 的连乘，不能只把“从零开始得到的 state”相加。K3 的做法是让每个 rank 计算两个本地片段：</p>
+<p>所以某段序列对输入 state 的作用依赖 $M_t$ 的连乘，不能只把“从零开始得到的 state”相加。K3 的做法是让每个 rank 计算两个本地片段：</p>
 <div class="table-wrap"><table>
 <thead>
 <tr>
@@ -563,17 +535,11 @@ $$3 的连乘，不能只把“从零开始得到的 state”相加。K3 的做�
 </thead>
 <tbody>
 <tr>
-<td>$$
-\alpha_{t,j}^h&gt;e^{-5}\approx 6.7\times10^{-3}
-$$4</td>
-<td>本段从 $$
-\alpha_{t,j}^h&gt;e^{-5}\approx 6.7\times10^{-3}
-$$5 开始生成的状态</td>
+<td>$\tilde{S}$</td>
+<td>本段从 $S=0$ 开始生成的状态</td>
 </tr>
 <tr>
-<td>$$
-\alpha_{t,j}^h&gt;e^{-5}\approx 6.7\times10^{-3}
-$$6</td>
+<td>$M^{T\leftarrow 1}$</td>
 <td>本段对输入 state 的 cumulative transition</td>
 </tr>
 </tbody>
@@ -648,69 +614,51 @@ $$6</td>
 <p>K3 有 93 层、1M context、hybrid KDA-MLA attention。随着深度增加，普通 residual connection 会把历史层信息压缩进当前 hidden state，早期层表示是否能被后层保真读取，取决于中间层变换是否保留这些信息。</p>
 <p>K3 report 对这个问题的类比很明确：标准 residual connection 在深度维度上类似 RNN，它把所有之前的信息压成一个状态；Transformer 当年用 attention 替代时间维度 RNN，让每个位置能选择性访问历史位置；AttnRes 则把同样思想搬到深度维度，让每层选择性访问前序层表示。</p>
 <h3 id="2-2-full-attnres-的定义">2.2 Full AttnRes 的定义</h3>
-<p>对第 $$
-\alpha_{t,j}^h&gt;e^{-5}\approx 6.7\times10^{-3}
-$$7 层，K3 定义一个 layer-specific learnable pseudo-query：</p>
+<p>对第 $l$ 层，K3 定义一个 layer-specific learnable pseudo-query：</p>
 <p>$$
 q_l=w_l\in\mathbb{R}^d
 $$</p>
 <p>前序层的 keys 和 values 为：</p>
 <p>$$
-\tilde{o}_t=S_t^\top q_t
-$$0</p>
-<p>其中 $$
-\alpha_{t,j}^h&gt;e^{-5}\approx 6.7\times10^{-3}
-$$8 是 token embedding，$$
-\alpha_{t,j}^h&gt;e^{-5}\approx 6.7\times10^{-3}
-$$9 是第 $$
-y_t=W_o\left[\operatorname{Sigmoid}(W_gx_t)\odot\operatorname{RMSNorm}(\tilde{o}_t)\right]
-$$0 层输出。注意力核为：</p>
+k_i=v_i=
+\begin{cases}
+h_1, &amp; i=0\\
+f_i(h_i), &amp; 1\le i\le l-1
+\end{cases}
+$$</p>
+<p>其中 $h_1$ 是 token embedding，$f_i(h_i)$ 是第 $i$ 层输出。注意力核为：</p>
 <p>$$
-\tilde{o}_t=S_t^\top q_t
-$$1</p>
+\phi(q,k)=\exp\left(q^\top\operatorname{RMSNorm}(k)\right)
+$$</p>
 <p>权重和输出为：</p>
 <p>$$
-\tilde{o}_t=S_t^\top q_t
-$$2</p>
+\alpha_{i\to l}=
+\frac{\phi(q_l,k_i)}
+{\sum_{j=0}^{l-1}\phi(q_l,k_j)}
+$$</p>
 <p>$$
-\tilde{o}_t=S_t^\top q_t
-$$3</p>
+h_l=\sum_{i=0}^{l-1}\alpha_{i\to l}v_i
+$$</p>
 <p>这个机制的核心不是“把所有残差相加”，而是“让当前层学习应该读哪些历史层”。RMSNorm 的作用是避免某些大幅值层输出仅因范数大而支配权重。</p>
 <h3 id="2-3-block-attnres-k3-的可部署版本">2.3 Block AttnRes：K3 的可部署版本</h3>
-<p>Full AttnRes 的算术成本在 $$
-y_t=W_o\left[\operatorname{Sigmoid}(W_gx_t)\odot\operatorname{RMSNorm}(\tilde{o}_t)\right]
-$$1 时还可接受，但真正麻烦是 memory 和 pipeline parallelism 下的跨 stage 通信：需要保留所有前层输出，开销为 $$
-y_t=W_o\left[\operatorname{Sigmoid}(W_gx_t)\odot\operatorname{RMSNorm}(\tilde{o}_t)\right]
-$$2。</p>
-<p>K3 使用 Block AttnRes：把 $$
-y_t=W_o\left[\operatorname{Sigmoid}(W_gx_t)\odot\operatorname{RMSNorm}(\tilde{o}_t)\right]
-$$3 层分成 $$
-y_t=W_o\left[\operatorname{Sigmoid}(W_gx_t)\odot\operatorname{RMSNorm}(\tilde{o}_t)\right]
-$$4 个 blocks，每个 block 内把层输出聚合成一个 block representation。对 block $$
-y_t=W_o\left[\operatorname{Sigmoid}(W_gx_t)\odot\operatorname{RMSNorm}(\tilde{o}_t)\right]
-$$5，若层集合为 $$
-y_t=W_o\left[\operatorname{Sigmoid}(W_gx_t)\odot\operatorname{RMSNorm}(\tilde{o}_t)\right]
-$$6，则：</p>
+<p>Full AttnRes 的算术成本在 $L&lt;100$ 时还可接受，但真正麻烦是 memory 和 pipeline parallelism 下的跨 stage 通信：需要保留所有前层输出，开销为 $O(Ld)$。</p>
+<p>K3 使用 Block AttnRes：把 $L$ 层分成 $N$ 个 blocks，每个 block 内把层输出聚合成一个 block representation。对 block $n$，若层集合为 $B_n$，则：</p>
 <p>$$
-\tilde{o}_t=S_t^\top q_t
-$$4</p>
-<p>第 $$
-y_t=W_o\left[\operatorname{Sigmoid}(W_gx_t)\odot\operatorname{RMSNorm}(\tilde{o}_t)\right]
-$$7 个 block 的第 $$
-y_t=W_o\left[\operatorname{Sigmoid}(W_gx_t)\odot\operatorname{RMSNorm}(\tilde{o}_t)\right]
-$$8 层看到的 value matrix 为：</p>
+b_n=\sum_{j\in B_n} f_j(h_j)
+$$</p>
+<p>第 $n$ 个 block 的第 $i$ 层看到的 value matrix 为：</p>
 <p>$$
-\tilde{o}_t=S_t^\top q_t
-$$5</p>
-<p>其中 $$
-y_t=W_o\left[\operatorname{Sigmoid}(W_gx_t)\odot\operatorname{RMSNorm}(\tilde{o}_t)\right]
-$$9，即 embedding 始终作为一个 source。这样内存/通信开销从：</p>
+V=
+\begin{cases}
+[b_0,b_1,\ldots,b_{n-1}]^\top, &amp; i=1\\
+[b_0,b_1,\ldots,b_{n-1},b_n^{i-1}]^\top, &amp; i\ge2
+\end{cases}
+$$</p>
+<p>其中 $b_0=h_1$，即 embedding 始终作为一个 source。这样内存/通信开销从：</p>
 <p>$$
-\tilde{o}_t=S_t^\top q_t
-$$6</p>
-<p>K3 采用 $$
-y_t=W_o\left[\operatorname{Sigmoid}(W_gx_t)\odot\tilde{o}_t\right]
-$$0 的经验设置：93 层分成 8 个 blocks，block size 约 12 层，加上 embedding 后共有 9 个 block-level sources。</p>
+O(Ld)\rightarrow O(Nd)
+$$</p>
+<p>K3 采用 $N\approx8$ 的经验设置：93 层分成 8 个 blocks，block size 约 12 层，加上 embedding 后共有 9 个 block-level sources。</p>
 <h3 id="2-4-attnres-与-kda-的关系">2.4 AttnRes 与 KDA 的关系</h3>
 <p>KDA 解决的是 token sequence 维度，AttnRes 解决的是 network depth 维度。两者不是替代关系。</p>
 <div class="table-wrap"><table>
@@ -786,9 +734,7 @@ $$0 的经验设置：93 层分成 8 个 blocks，block size 约 12 层，加上
 </tr>
 <tr>
 <td>系统实现</td>
-<td>Block AttnRes 把开销控制到 $$
-y_t=W_o\left[\operatorname{Sigmoid}(W_gx_t)\odot\tilde{o}_t\right]
-$$1，并有专门 serving kernel</td>
+<td>Block AttnRes 把开销控制到 $O(Nd)$，并有专门 serving kernel</td>
 <td>vLLM 或其他推理框架是否支持完整 Block AttnRes 仍需确认</td>
 </tr>
 </tbody>
@@ -874,19 +820,17 @@ $$1，并有专门 serving kernel</td>
 </tr>
 <tr>
 <td>routed experts</td>
-<td>只在 latent width $$
-y_t=W_o\left[\operatorname{Sigmoid}(W_gx_t)\odot\tilde{o}_t\right]
-$$2 上工作，降低专家扩展时的通信和 expert-weight traffic</td>
+<td>只在 latent width $\ell$ 上工作，降低专家扩展时的通信和 expert-weight traffic</td>
 </tr>
 </tbody>
 </table></div>
 <p>K3 report 给出的 Stable LatentMoE 形式是：</p>
 <p>$$
-\tilde{o}_t=S_t^\top q_t
-$$7</p>
+u=\sum_{i\in T_k(x)} p_i E_i^{\text{routed}}(W_\downarrow x)
+$$</p>
 <p>$$
-\tilde{o}_t=S_t^\top q_t
-$$8</p>
+y=\sum_{j=1}^{N_s}E_j^{\text{shared}}(x)+W_\uparrow \operatorname{RMSNorm}(u)
+$$</p>
 <p>其中：</p>
 <div class="table-wrap"><table>
 <thead>
@@ -897,121 +841,92 @@ $$8</p>
 </thead>
 <tbody>
 <tr>
-<td>$$
-y_t=W_o\left[\operatorname{Sigmoid}(W_gx_t)\odot\tilde{o}_t\right]
-$$3</td>
+<td>$W_\downarrow x\in\mathbb{R}^{\ell}$</td>
 <td>把 full-width 输入投到 routed latent space</td>
 </tr>
 <tr>
-<td>$$
-y_t=W_o\left[\operatorname{Sigmoid}(W_gx_t)\odot\tilde{o}_t\right]
-$$4</td>
+<td>$E_i^{\text{routed}}:\mathbb{R}^{\ell}\to\mathbb{R}^{\ell}$</td>
 <td>routed expert，在 latent width 上工作</td>
 </tr>
 <tr>
-<td>$$
-y_t=W_o\left[\operatorname{Sigmoid}(W_gx_t)\odot\tilde{o}_t\right]
-$$5</td>
+<td>$E_j^{\text{shared}}:\mathbb{R}^{d}\to\mathbb{R}^{d}$</td>
 <td>shared expert，保留 full-width path</td>
 </tr>
 <tr>
-<td>$$
-y_t=W_o\left[\operatorname{Sigmoid}(W_gx_t)\odot\tilde{o}_t\right]
-$$6</td>
+<td>$p_i$</td>
 <td>router weight，由 Quantile Balancing 路由规则定义</td>
 </tr>
 <tr>
-<td>$$
-y_t=W_o\left[\operatorname{Sigmoid}(W_gx_t)\odot\tilde{o}_t\right]
-$$7</td>
+<td>$N_s=2$</td>
 <td>K3 每层固定两个 shared experts</td>
 </tr>
 </tbody>
 </table></div>
-<p>RMSNorm 插在 routed aggregation 和 up-projection 之间，目的不是为了好看，而是降低 $$
-y_t=W_o\left[\operatorname{Sigmoid}(W_gx_t)\odot\tilde{o}_t\right]
-$$8 的尺度波动对后续 $$
-y_t=W_o\left[\operatorname{Sigmoid}(W_gx_t)\odot\tilde{o}_t\right]
-$$9 和 shared branch 合流的影响。K3 report 明确说这既稳定训练，也持续改善 validation loss 和 downstream benchmarks。</p>
+<p>RMSNorm 插在 routed aggregation 和 up-projection 之间，目的不是为了好看，而是降低 $u$ 的尺度波动对后续 $W_\uparrow$ 和 shared branch 合流的影响。K3 report 明确说这既稳定训练，也持续改善 validation loss 和 downstream benchmarks。</p>
 <h3 id="3-3-situ-glu-把-swiglu-的大值爆炸封顶">3.3 SiTU-GLU：把 SwiGLU 的大值爆炸封顶</h3>
 <p>SwiGLU 的经验效果强，但两个 multiplicative factors 都是无界的。大模型和低精度训练中，如果 gate branch 和 up branch 同时出现大坐标，乘积容易制造 activation outliers。</p>
 <p>K3 提出 Sigmoid Tanh Unit GLU（SiTU-GLU）：</p>
 <p>$$
-\tilde{o}_t=S_t^\top q_t
-$$9</p>
+\operatorname{SiTU\text{-}GLU}(x)=
+\left[
+\beta_1\tanh\left(\frac{W_gx}{\beta_1}\right)
+\odot\operatorname{Sigmoid}(W_gx)
+\right]
+\odot
+\left[
+\beta_2\tanh\left(\frac{W_ux}{\beta_2}\right)
+\right]
+$$</p>
 <p>K3 使用：</p>
 <p>$$
-g_t^h=g_{\min}\operatorname{Sigmoid}\left(e^{A^h}z_t^h\right)\in(g_{\min},0)^{d_k}
-$$0</p>
+\beta_1=4,\quad \beta_2=25
+$$</p>
 <p>因此每个输出坐标满足：</p>
 <p>$$
-g_t^h=g_{\min}\operatorname{Sigmoid}\left(e^{A^h}z_t^h\right)\in(g_{\min},0)^{d_k}
-$$1</p>
-<p>这个设计保留了 SwiGLU 的局部形状：当 $$
-S_t=M_tS_{t-1}+\beta_t k_t v_t^\top
-$$0 接近 0 时，</p>
+\|\operatorname{SiTU\text{-}GLU}(x)\|_\infty\le \beta_1\beta_2=100
+$$</p>
+<p>这个设计保留了 SwiGLU 的局部形状：当 $z$ 接近 0 时，</p>
 <p>$$
-g_t^h=g_{\min}\operatorname{Sigmoid}\left(e^{A^h}z_t^h\right)\in(g_{\min},0)^{d_k}
-$$2</p>
+\beta\tanh\left(\frac{z}{\beta}\right)=z+O\left(\frac{z^3}{\beta^2}\right)
+$$</p>
 <p>所以 SiTU-GLU 在原点附近与 SwiGLU 一阶一致；当输入很大时，tanh smooth cap 把输出封顶。相比 hard clamp，smooth cap 在饱和边界外仍有非零梯度，训练行为更平滑。</p>
 <p><img alt="K3 Stable LatentMoE and SiTU-GLU" decoding="async" loading="lazy" src="assets/kimi_series/kimi_k3_stable_latentmoe_situ_glu_p7.png"/></p>
 <p>图：Kimi K3 technical report 第 7 页，Figure 4 展示 GLU、SwiGLU、SiTU-GLU 的 branch 定义和曲线，并给出 Stable LatentMoE 的公式。</p>
 <h3 id="3-4-quantile-balancing-不用-auxiliary-loss-的专家负载均衡">3.4 Quantile Balancing：不用 auxiliary loss 的专家负载均衡</h3>
-<p>传统 MoE 常用 auxiliary load balancing loss。问题是 loss 权重需要调，且可能和主任务优化相互拉扯。K3 采用 auxiliary-loss-free routing：给每个专家一个 bias $$
-S_t=M_tS_{t-1}+\beta_t k_t v_t^\top
-$$1，用它影响 Top-k dispatch，但不把 bias 放进 mixture weight。</p>
-<p>对 token $$
-S_t=M_tS_{t-1}+\beta_t k_t v_t^\top
-$$2，router score 为：</p>
+<p>传统 MoE 常用 auxiliary load balancing loss。问题是 loss 权重需要调，且可能和主任务优化相互拉扯。K3 采用 auxiliary-loss-free routing：给每个专家一个 bias $b_j$，用它影响 Top-k dispatch，但不把 bias 放进 mixture weight。</p>
+<p>对 token $x_i$，router score 为：</p>
 <p>$$
-g_t^h=g_{\min}\operatorname{Sigmoid}\left(e^{A^h}z_t^h\right)\in(g_{\min},0)^{d_k}
-$$3</p>
+s_i=\operatorname{Sigmoid}(W_rx_i)
+$$</p>
 <p>K3 的 routing rule 是：</p>
 <p>$$
-g_t^h=g_{\min}\operatorname{Sigmoid}\left(e^{A^h}z_t^h\right)\in(g_{\min},0)^{d_k}
-$$4</p>
+T_i=\operatorname{argtopk}(s_i+b)
+$$</p>
 <p>$$
-g_t^h=g_{\min}\operatorname{Sigmoid}\left(e^{A^h}z_t^h\right)\in(g_{\min},0)^{d_k}
-$$5</p>
-<p>注意 $$
-S_t=M_tS_{t-1}+\beta_t k_t v_t^\top
-$$3 只影响被派发到哪些专家，不影响 $$
-S_t=M_tS_{t-1}+\beta_t k_t v_t^\top
-$$4 的归一化权重。这样 dispatch 可以均衡，但 router 的梯度目标不被 bias 直接扭曲。</p>
-<p>设 batch 中有 $$
-S_t=M_tS_{t-1}+\beta_t k_t v_t^\top
-$$5 个 tokens、$$
-S_t=M_tS_{t-1}+\beta_t k_t v_t^\top
-$$6 个 routed experts、Top-k，则每个专家的目标负载为：</p>
+p_{i,j}=\frac{s_{i,j}}{\sum_{r\in T_i}s_{i,r}},\quad j\in T_i
+$$</p>
+<p>注意 $b$ 只影响被派发到哪些专家，不影响 $p_{i,j}$ 的归一化权重。这样 dispatch 可以均衡，但 router 的梯度目标不被 bias 直接扭曲。</p>
+<p>设 batch 中有 $m$ 个 tokens、$n$ 个 routed experts、Top-k，则每个专家的目标负载为：</p>
 <p>$$
-g_t^h=g_{\min}\operatorname{Sigmoid}\left(e^{A^h}z_t^h\right)\in(g_{\min},0)^{d_k}
-$$6</p>
-<p>Quantile Balancing 的思路是：先做 Top-$$
-S_t=M_tS_{t-1}+\beta_t k_t v_t^\top
-$$7，得到每个 token 的 cutoff $$
-S_t=M_tS_{t-1}+\beta_t k_t v_t^\top
-$$8，再看每个专家 $$
-S_t=M_tS_{t-1}+\beta_t k_t v_t^\top
-$$9 的 margin：</p>
+q=\frac{mk}{n}
+$$</p>
+<p>Quantile Balancing 的思路是：先做 Top-$(k+1)$，得到每个 token 的 cutoff $\alpha_i^{(t)}$，再看每个专家 $j$ 的 margin：</p>
 <p>$$
-g_t^h=g_{\min}\operatorname{Sigmoid}\left(e^{A^h}z_t^h\right)\in(g_{\min},0)^{d_k}
-$$7</p>
+s_{:,j}-\alpha^{(t)}
+$$</p>
 <p>下一步 bias 由分位数确定：</p>
 <p>$$
-g_t^h=g_{\min}\operatorname{Sigmoid}\left(e^{A^h}z_t^h\right)\in(g_{\min},0)^{d_k}
-$$8</p>
+\hat{b}_{j}^{(t+1)}
+\leftarrow
+-\operatorname{quantile}_{1-k/n}\left(s_{:,j}-\alpha^{(t)}\right)
+$$</p>
 <p>$$
-g_t^h=g_{\min}\operatorname{Sigmoid}\left(e^{A^h}z_t^h\right)\in(g_{\min},0)^{d_k}
-$$9</p>
-<p>直觉上，QB 为每个专家选择一个阈值，让它刚好接收目标数量 $$
-M_t=\left(I-\beta_t k_t k_t^\top\right)\operatorname{Diag}(\alpha_t)
-$$0 的 token。K3 report 的小例子中，$$
-M_t=\left(I-\beta_t k_t k_t^\top\right)\operatorname{Diag}(\alpha_t)
-$$1，普通 Top-k 得到负载 $$
-M_t=\left(I-\beta_t k_t k_t^\top\right)\operatorname{Diag}(\alpha_t)
-$$2，QB 后变成 $$
-M_t=\left(I-\beta_t k_t k_t^\top\right)\operatorname{Diag}(\alpha_t)
-$$3。</p>
+b^{(t+1)}
+\leftarrow
+\hat{b}^{(t+1)}
+-\operatorname{mean}(\hat{b}^{(t+1)})\mathbf{1}
+$$</p>
+<p>直觉上，QB 为每个专家选择一个阈值，让它刚好接收目标数量 $q$ 的 token。K3 report 的小例子中，$m=8,n=4,k=1$，普通 Top-k 得到负载 $(4,3,1,0)$，QB 后变成 $(2,2,2,2)$。</p>
 <p><img alt="K3 Quantile Balancing" decoding="async" loading="lazy" src="assets/kimi_series/kimi_k3_quantile_balancing_p8.png"/></p>
 <p>图：Kimi K3 technical report 第 8 页，Figure 5 展示 Quantile Balancing 如何把不均衡路由变成均衡负载。</p>
 <h3 id="3-5-大规模训练中的-qb-histogram-estimator">3.5 大规模训练中的 QB histogram estimator</h3>
@@ -1045,11 +960,7 @@ $$3。</p>
 <p>这个设计的关键是 counts 可加，所以不受 token shard 方式影响；代价是存在 bin width 带来的估计误差。</p>
 <h3 id="3-6-stable-moe-的系统侧-moonep-与-serving-kernel">3.6 Stable MoE 的系统侧：MoonEP 与 serving kernel</h3>
 <p>Stable MoE 在模型侧让路由更稳，在系统侧还需要让 EP 执行更可预测。</p>
-<p>K3 report 对 MoonEP 的描述是：每个 rank 接收固定 $$
-M_t=\left(I-\beta_t k_t k_t^\top\right)\operatorname{Diag}(\alpha_t)
-$$4 tokens，并在每个 rank 最多 $$
-M_t=\left(I-\beta_t k_t k_t^\top\right)\operatorname{Diag}(\alpha_t)
-$$5 个 redundant experts 的条件下保持 perfect balance。系统实现包括：</p>
+<p>K3 report 对 MoonEP 的描述是：每个 rank 接收固定 $S\times K$ tokens，并在每个 rank 最多 $E/R$ 个 redundant experts 的条件下保持 perfect balance。系统实现包括：</p>
 <div class="table-wrap"><table>
 <thead>
 <tr>
@@ -1087,9 +998,7 @@ $$5 个 redundant experts 的条件下保持 perfect balance。系统实现包�
 <tbody>
 <tr>
 <td>fuse latent down-projection with router</td>
-<td>把 latent $$
-M_t=\left(I-\beta_t k_t k_t^\top\right)\operatorname{Diag}(\alpha_t)
-$$6 和 router 合并成一个 GEMM</td>
+<td>把 latent $W_\downarrow$ 和 router 合并成一个 GEMM</td>
 </tr>
 <tr>
 <td>shard latent weight matrices</td>
@@ -1127,9 +1036,7 @@ $$6 和 router 合并成一个 GEMM</td>
 <tr>
 <td>训练稳定性</td>
 <td>RMSNorm、SiTU-GLU、QB 共同控制 scale、activation、load</td>
-<td>SiTU-GLU 的 $$
-M_t=\left(I-\beta_t k_t k_t^\top\right)\operatorname{Diag}(\alpha_t)
-$$7 是否跨模型可迁移需要验证</td>
+<td>SiTU-GLU 的 $\beta_1,\beta_2$ 是否跨模型可迁移需要验证</td>
 </tr>
 <tr>
 <td>分布式效率</td>
