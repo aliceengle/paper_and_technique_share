@@ -1,0 +1,1396 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Kimi K3 核心技术分享卡：KDA、AttnRes、Stable MoE</title>
+  <meta name="description" content="聚焦 Kimi K3 的 KDA、Attention Residuals 与 Stable LatentMoE 三项核心结构技术">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Noto+Sans+SC:wght@300;400;500;600;700&family=Source+Serif+4:opsz,wght@8..60,500;8..60,600;8..60,700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.21/dist/katex.min.css">
+  <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.21/dist/katex.min.js"></script>
+  <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.21/dist/contrib/auto-render.min.js"
+    onload="renderMathInElement(document.body, {delimiters:[{left:'$$',right:'$$',display:true},{left:'$',right:'$',display:false}], throwOnError:false});"></script>
+  <script defer src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
+  <style>
+    :root {
+      --bg: #eef3f7;
+      --panel: #ffffff;
+      --panel-soft: #f7fafc;
+      --ink: #14202b;
+      --ink-2: #425160;
+      --ink-3: #7c8997;
+      --border: #dbe5ee;
+      --accent: #0f6973;
+      --accent-2: #426fb1;
+      --accent-bg: rgba(15, 105, 115, .08);
+      --warn-bg: #fff8e8;
+      --measure: 1180px;
+      --font-serif: "Source Serif 4", "Noto Sans SC", Georgia, serif;
+      --font-sans: "Noto Sans SC", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      --font-mono: "IBM Plex Mono", "Noto Sans SC", monospace;
+    }
+    *, *::before, *::after { box-sizing: border-box; }
+    html { scroll-behavior: smooth; font-size: 17px; }
+    body {
+      margin: 0;
+      color: var(--ink-2);
+      background:
+        linear-gradient(180deg, #f9fbfd 0, var(--bg) 420px),
+        var(--bg);
+      font-family: var(--font-sans);
+      line-height: 1.76;
+      -webkit-font-smoothing: antialiased;
+    }
+    a { color: var(--accent); text-decoration-color: rgba(15,105,115,.28); text-underline-offset: 3px; }
+    a:hover { text-decoration-color: var(--accent); }
+    .progress-bar { position: fixed; inset: 0 0 auto 0; height: 3px; z-index: 100; }
+    .progress-bar .fill { height: 100%; width: 0; background: linear-gradient(90deg, var(--accent), var(--accent-2)); }
+    .page { max-width: var(--measure); margin: 0 auto; padding: 48px 28px 76px; }
+    .hero {
+      padding: 28px 0 30px;
+      border-bottom: 1px solid var(--border);
+      margin-bottom: 24px;
+    }
+    .eyebrow {
+      color: var(--accent);
+      font: 600 .78rem/1.4 var(--font-mono);
+      letter-spacing: .03em;
+      text-transform: uppercase;
+      margin-bottom: .6rem;
+    }
+    h1, h2, h3, h4 { color: var(--ink); font-family: var(--font-serif); line-height: 1.34; }
+    h1 { max-width: 900px; margin: 0 0 .9rem; font-size: clamp(2rem, 4vw, 3.4rem); font-weight: 700; }
+    .lead { max-width: 820px; margin: 0; color: var(--ink-2); font-size: 1.04rem; }
+    .topline {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      margin-top: 18px;
+    }
+    .pill {
+      display: inline-flex;
+      align-items: center;
+      min-height: 30px;
+      padding: 4px 10px;
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      background: var(--panel);
+      color: var(--ink-2);
+      font-size: .86rem;
+    }
+    .content-grid {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr);
+      gap: 20px;
+    }
+    .share-section-card {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 24px;
+      box-shadow: 0 14px 36px rgba(20, 32, 43, .06);
+    }
+    .share-section-card + .share-section-card { margin-top: 20px; }
+    h2 { margin: 0 0 1rem; padding-bottom: .6rem; border-bottom: 1px solid var(--border); font-size: 1.45rem; }
+    h3 { margin: 1.8rem 0 .65rem; font-size: 1.08rem; }
+    h4 { margin: 1.3rem 0 .45rem; font-size: 1rem; }
+    p { margin: 0 0 1rem; }
+    blockquote {
+      margin: 1rem 0 1.2rem;
+      padding: .85rem 1rem;
+      border-left: 4px solid var(--accent);
+      background: var(--accent-bg);
+      border-radius: 0 8px 8px 0;
+    }
+    code {
+      font-family: var(--font-mono);
+      font-size: .86em;
+      background: #edf4f7;
+      color: #20303c;
+      border: 1px solid rgba(190,205,218,.62);
+      border-radius: 4px;
+      padding: 1px 5px;
+    }
+    pre {
+      overflow-x: auto;
+      padding: 1rem;
+      background: #101820;
+      color: #e8eef3;
+      border-radius: 8px;
+      line-height: 1.58;
+    }
+    pre code { background: transparent; border: 0; color: inherit; padding: 0; }
+    ul, ol { padding-left: 1.35rem; margin: .35rem 0 1.15rem; }
+    li { margin: .2rem 0; }
+    .table-wrap { overflow-x: auto; margin: 1rem 0 1.35rem; border: 1px solid var(--border); border-radius: 8px; }
+    table { width: 100%; min-width: 680px; border-collapse: collapse; font-size: .91rem; }
+    th, td { padding: .64rem .72rem; border-bottom: 1px solid var(--border); vertical-align: top; }
+    th { background: var(--panel-soft); color: var(--ink); font-weight: 600; text-align: left; }
+    tr:last-child td { border-bottom: 0; }
+    img {
+      display: block;
+      max-width: 100%;
+      margin: 1rem auto 1.25rem;
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      background: #fff;
+    }
+    .mermaid {
+      margin: 1rem 0 1.35rem;
+      padding: 1rem;
+      background: var(--panel-soft);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      overflow-x: auto;
+    }
+    .toc {
+      position: sticky;
+      top: 18px;
+      float: right;
+      width: 250px;
+      max-height: calc(100vh - 36px);
+      overflow: auto;
+      margin: 0 -282px 20px 24px;
+      padding: 14px;
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      background: rgba(255, 255, 255, .88);
+      backdrop-filter: blur(10px);
+      font-size: .78rem;
+    }
+    .toc-label { color: var(--ink-3); font: 600 .72rem/1 var(--font-mono); margin-bottom: .6rem; }
+    .toc ul { list-style: none; margin: 0; padding: 0; }
+    .toc a { display: block; padding: .22rem 0; color: var(--ink-3); text-decoration: none; }
+    .toc li.level-3 a { padding-left: .8rem; font-size: .74rem; }
+    .toc a.active { color: var(--accent); }
+    @media (max-width: 1720px) { .toc { display: none; } }
+    @media (max-width: 720px) {
+      html { font-size: 16px; }
+      .page { padding: 32px 14px 56px; }
+      .share-section-card { padding: 18px; border-radius: 10px; }
+      table { min-width: 620px; }
+    }
+    @media print {
+      .progress-bar, .toc { display: none !important; }
+      body { background: #fff; }
+      .page { max-width: none; padding: 0; }
+      .share-section-card { box-shadow: none; break-inside: avoid; }
+    }
+  </style>
+</head>
+<body>
+  <div class="progress-bar"><div class="fill" id="progressFill"></div></div>
+  <main class="page">
+    <header class="hero">
+      <div class="eyebrow">Kimi K3 Core Tech Share Card</div>
+      <h1>Kimi K3 三项核心技术</h1>
+      <p class="lead">聚焦 KDA、Attention Residuals、Stable MoE：分别从序列长度、模型深度、专家宽度三个维度解释 K3 的结构跃迁。</p>
+      <div class="topline">
+        <span class="pill">KDA / 1M Context</span>
+        <span class="pill">Block AttnRes</span>
+        <span class="pill">Stable LatentMoE</span>
+        <span class="pill">Quantile Balancing</span>
+      </div>
+    </header>
+    <nav class="toc" aria-label="分享卡目录">
+      <div class="toc-label">目录</div>
+      <ul id="tocList">
+        <li class="level-2"><a href="#0-结论速览">0. 结论速览</a></li>
+<li class="level-3"><a href="#0-1-三项技术在-k3-中分别解决什么">0.1 三项技术在 K3 中分别解决什么</a></li>
+<li class="level-3"><a href="#0-2-k3-不是-k2-x-后训练增强-而是结构跳变">0.2 K3 不是 K2.x 后训练增强，而是结构跳变</a></li>
+<li class="level-2"><a href="#1-kda-把-1m-context-从-kv-cache-问题改造成-recurrent-state-问题">1. KDA：把 1M context 从 KV cache 问题改造成 recurrent state 问题</a></li>
+<li class="level-3"><a href="#1-1-k3-为什么需要-kda">1.1 K3 为什么需要 KDA</a></li>
+<li class="level-3"><a href="#1-2-kda-的基本-recurrence">1.2 KDA 的基本 recurrence</a></li>
+<li class="level-3"><a href="#1-3-k3-相比-kimi-linear-的关键改动">1.3 K3 相比 Kimi Linear 的关键改动</a></li>
+<li class="level-3"><a href="#1-4-为什么-k3-不是纯-kda-而是-kda-gated-mla">1.4 为什么 K3 不是纯 KDA，而是 KDA + Gated MLA</a></li>
+<li class="level-3"><a href="#1-5-kda-的系统共设计-flashkda-kcp-prefix-cache">1.5 KDA 的系统共设计：FlashKDA、KCP、prefix cache</a></li>
+<li class="level-3"><a href="#1-6-kda-的收益和风险">1.6 KDA 的收益和风险</a></li>
+<li class="level-2"><a href="#2-attention-residuals-把-attention-从-token-维度扩展到-layer-维度">2. Attention Residuals：把 attention 从 token 维度扩展到 layer 维度</a></li>
+<li class="level-3"><a href="#2-1-k3-为什么需要-attnres">2.1 K3 为什么需要 AttnRes</a></li>
+<li class="level-3"><a href="#2-2-full-attnres-的定义">2.2 Full AttnRes 的定义</a></li>
+<li class="level-3"><a href="#2-3-block-attnres-k3-的可部署版本">2.3 Block AttnRes：K3 的可部署版本</a></li>
+<li class="level-3"><a href="#2-4-attnres-与-kda-的关系">2.4 AttnRes 与 KDA 的关系</a></li>
+<li class="level-3"><a href="#2-5-attnres-的-serving-kernel">2.5 AttnRes 的 serving kernel</a></li>
+<li class="level-3"><a href="#2-6-attnres-的收益和边界">2.6 AttnRes 的收益和边界</a></li>
+<li class="level-2"><a href="#3-stable-moe-让-896-experts-top-16-的宽度扩展稳定下来">3. Stable MoE：让 896 experts / Top-16 的宽度扩展稳定下来</a></li>
+<li class="level-3"><a href="#3-1-k3-的-moe-扩展为什么需要-stable">3.1 K3 的 MoE 扩展为什么需要“stable”</a></li>
+<li class="level-3"><a href="#3-2-stable-latentmoe-的结构">3.2 Stable LatentMoE 的结构</a></li>
+<li class="level-3"><a href="#3-3-situ-glu-把-swiglu-的大值爆炸封顶">3.3 SiTU-GLU：把 SwiGLU 的大值爆炸封顶</a></li>
+<li class="level-3"><a href="#3-4-quantile-balancing-不用-auxiliary-loss-的专家负载均衡">3.4 Quantile Balancing：不用 auxiliary loss 的专家负载均衡</a></li>
+<li class="level-3"><a href="#3-5-大规模训练中的-qb-histogram-estimator">3.5 大规模训练中的 QB histogram estimator</a></li>
+<li class="level-3"><a href="#3-6-stable-moe-的系统侧-moonep-与-serving-kernel">3.6 Stable MoE 的系统侧：MoonEP 与 serving kernel</a></li>
+<li class="level-3"><a href="#3-7-stable-moe-的收益和风险">3.7 Stable MoE 的收益和风险</a></li>
+<li class="level-2"><a href="#4-三项技术的组合关系">4. 三项技术的组合关系</a></li>
+<li class="level-2"><a href="#5-工程落地与推理实验关注点">5. 工程落地与推理实验关注点</a></li>
+<li class="level-3"><a href="#5-1-接入-k3-前必须确认的实现问题">5.1 接入 K3 前必须确认的实现问题</a></li>
+<li class="level-3"><a href="#5-2-推荐-benchmark-指标">5.2 推荐 benchmark 指标</a></li>
+<li class="level-3"><a href="#5-3-建议实验">5.3 建议实验</a></li>
+<li class="level-2"><a href="#6-参考链接">6. 参考链接</a></li>
+      </ul>
+    </nav>
+    <article class="content-grid">
+      <section class="share-section-card"><h2 id="0-结论速览">0. 结论速览</h2>
+<h3 id="0-1-三项技术在-k3-中分别解决什么">0.1 三项技术在 K3 中分别解决什么</h3>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>技术</th>
+<th>对应维度</th>
+<th>K3 中的位置</th>
+<th>主要解决的问题</th>
+<th>关键创新</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Kimi Delta Attention（KDA）</td>
+<td>序列维度</td>
+<td>69 个 KDA layers，与 24 个 Gated MLA layers 组成 3:1 hybrid attention</td>
+<td>1M context 下 full attention 的 KV cache 和 prefill/decode 成本过高</td>
+<td>用固定大小 recurrent state 替代随序列增长的 KV cache，并用 Gated MLA 周期性补全全局交互</td>
+</tr>
+<tr>
+<td>Attention Residuals（AttnRes）</td>
+<td>深度维度</td>
+<td>K3 93 层 backbone 中的 Block AttnRes</td>
+<td>深层模型中早期表示被层层 residual 压缩，跨层信息检索能力弱</td>
+<td>把“attention over tokens”的思想搬到“attention over layers”，让每层选择性检索前序层表示</td>
+</tr>
+<tr>
+<td>Stable LatentMoE / Stable MoE</td>
+<td>宽度与专家维度</td>
+<td>每个 attention layer 后接 Stable LatentMoE feed-forward network</td>
+<td>896 routed experts、Top-16 激活时，普通 MoE 容易出现激活爆炸、专家负载不均和通信开销上升</td>
+<td>Latent routed path + RMSNorm + SiTU-GLU + Quantile Balancing + MoonEP，使极大专家池稳定训练和服务</td>
+</tr>
+</tbody>
+</table></div>
+<h3 id="0-2-k3-不是-k2-x-后训练增强-而是结构跳变">0.2 K3 不是 K2.x 后训练增强，而是结构跳变</h3>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>项</th>
+<th>Kimi K2</th>
+<th>Kimi K3</th>
+<th>变化含义</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>总参数</td>
+<td>1.04T</td>
+<td>2.78T</td>
+<td>容量显著扩大</td>
+</tr>
+<tr>
+<td>激活参数</td>
+<td>32.6B</td>
+<td>104.2B</td>
+<td>单 token 计算也明显上升</td>
+</tr>
+<tr>
+<td>层数</td>
+<td>61</td>
+<td>93</td>
+<td>深度增加，需要更强跨层信息流</td>
+</tr>
+<tr>
+<td>context</td>
+<td>128K</td>
+<td>1M</td>
+<td>序列维度进入百万 token</td>
+</tr>
+<tr>
+<td>attention</td>
+<td>61 MLA</td>
+<td>69 KDA + 24 MLA</td>
+<td>从纯 MLA 转向 hybrid KDA-MLA</td>
+</tr>
+<tr>
+<td>routed experts</td>
+<td>384</td>
+<td>896</td>
+<td>专家空间扩大 133%</td>
+</tr>
+<tr>
+<td>active experts/token</td>
+<td>8</td>
+<td>16</td>
+<td>每 token 专家混合能力增强</td>
+</tr>
+<tr>
+<td>shared experts</td>
+<td>1</td>
+<td>2</td>
+<td>保留更强通用 full-width path</td>
+</tr>
+<tr>
+<td>activation</td>
+<td>SwiGLU</td>
+<td>SiTU-GLU</td>
+<td>为低精度和极大 MoE 稳定性做约束</td>
+</tr>
+</tbody>
+</table></div>
+<p><img alt="K3 scaling law and architecture table" decoding="async" loading="lazy" src="assets/kimi_series/kimi_k3_scaling_arch_table_p11.png"/></p>
+<p>图：Kimi K3 technical report 第 11 页。Figure 7 和 Table 1 给出 K2 到 K3 的 scaling efficiency 与结构差异。</p>
+</section><section class="share-section-card"><h2 id="1-kda-把-1m-context-从-kv-cache-问题改造成-recurrent-state-问题">1. KDA：把 1M context 从 KV cache 问题改造成 recurrent state 问题</h2>
+<h3 id="1-1-k3-为什么需要-kda">1.1 K3 为什么需要 KDA</h3>
+<p>K3 的目标上下文是 1M tokens。如果继续使用标准 full attention 或只靠 MLA，成本压力主要来自两块：</p>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>压力</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>KV cache 随长度线性增长</td>
+<td>每层都需要保存历史 token 的 key/value 或 latent KV；1M context 下 cache 成本直接进入服务瓶颈</td>
+</tr>
+<tr>
+<td>prefill 计算和 prefix reuse 难度上升</td>
+<td>长输入一旦 cache miss，prefill 代价极高；如果 prefix cache 颗粒度过粗，短请求和部分匹配都无法复用</td>
+</tr>
+</tbody>
+</table></div>
+<p>KDA 的核心转向是：不再为每个历史 token 保存一份 KV，而是用固定大小的 recurrent state 承载历史信息。代价是状态更新存在串行依赖，需要专门 kernel 和 context parallelism；收益是 cache 体积、跨节点传输和 prefix 复用都可以重新设计。</p>
+<h3 id="1-2-kda-的基本-recurrence">1.2 KDA 的基本 recurrence</h3>
+<p>K3 technical report 对单头 KDA 的定义如下。设 hidden state 为 $$
+\alpha_t^h=\exp(g_t^h)\in(e^{g_{\min}},1)^{d_k}
+$$0，query/key/value 分别为 $$
+\alpha_t^h=\exp(g_t^h)\in(e^{g_{\min}},1)^{d_k}
+$$1、$$
+\alpha_t^h=\exp(g_t^h)\in(e^{g_{\min}},1)^{d_k}
+$$2，recurrent state 为 $$
+\alpha_t^h=\exp(g_t^h)\in(e^{g_{\min}},1)^{d_k}
+$$3。</p>
+<p>$$
+S_t=
+\left(I-\beta_t k_t k_t^\top\right)
+\operatorname{Diag}(\alpha_t)S_{t-1}
++\beta_t k_t v_t^\top
+$$</p>
+<p>$$
+\tilde{o}_t=S_t^\top q_t
+$$</p>
+<p>其中：</p>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>符号</th>
+<th>含义</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>$$
+\alpha_t^h=\exp(g_t^h)\in(e^{g_{\min}},1)^{d_k}
+$$4</td>
+<td>channel-wise one-step retention factor，决定每个 key channel 的遗忘/保留强度</td>
+</tr>
+<tr>
+<td>$$
+\alpha_t^h=\exp(g_t^h)\in(e^{g_{\min}},1)^{d_k}
+$$5</td>
+<td>delta-rule write strength，决定当前 token 写入 recurrent state 的强度</td>
+</tr>
+<tr>
+<td>$$
+\alpha_t^h=\exp(g_t^h)\in(e^{g_{\min}},1)^{d_k}
+$$6</td>
+<td>delta-rule correction，用当前 key 对旧状态做校正</td>
+</tr>
+<tr>
+<td>$$
+\alpha_t^h=\exp(g_t^h)\in(e^{g_{\min}},1)^{d_k}
+$$7</td>
+<td>当前 token 写入项</td>
+</tr>
+</tbody>
+</table></div>
+<p>这个公式的直觉是：KDA 不只是累加历史 value，而是带有“遗忘、校正、写入”的状态机。它比普通线性注意力更像可学习的有限状态 memory。</p>
+<h3 id="1-3-k3-相比-kimi-linear-的关键改动">1.3 K3 相比 Kimi Linear 的关键改动</h3>
+<p>Kimi Linear 已经验证 KDA + MLA 的 3:1 hybrid 路线。K3 继承这条路线，但做了两个重要改变。</p>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>改动</th>
+<th>Kimi Linear</th>
+<th>Kimi K3</th>
+<th>作用</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>decay parameterization</td>
+<td>negative-Softplus，log-decay 下界为 $$
+\alpha_t^h=\exp(g_t^h)\in(e^{g_{\min}},1)^{d_k}
+$$8</td>
+<td>scaled sigmoid，把 log-decay 限制在 $$
+\alpha_t^h=\exp(g_t^h)\in(e^{g_{\min}},1)^{d_k}
+$$9</td>
+<td>避免 chunk 内 reciprocal cumulative decay 过大，减少 BF16 溢出和 diagonal tile 特殊路径</td>
+</tr>
+<tr>
+<td>output gate</td>
+<td>low-rank gate</td>
+<td>full-rank input-dependent gate</td>
+<td>提高通道级输出调制能力，与 Gated MLA 的 full-rank gate 对齐</td>
+</tr>
+</tbody>
+</table></div>
+<p>K3 的 lower-bounded decay 写法是：</p>
+<p>$$
+g_t^h=g_{\min}\operatorname{Sigmoid}\left(e^{A^h}z_t^h\right)\in(g_{\min},0)^{d_k}
+$$</p>
+<p>$$
+\alpha_t^h=\exp(g_t^h)\in(e^{g_{\min}},1)^{d_k}
+$$</p>
+<p>K3 固定 $$
+\alpha_{t,j}^h&gt;e^{-5}\approx 6.7\times10^{-3}
+$$0。因此每个 retention factor 都满足：</p>
+<p>$$
+\alpha_{t,j}^h&gt;e^{-5}\approx 6.7\times10^{-3}
+$$</p>
+<p>对 16-token tile，累计 log-decay 落在 $$
+\alpha_{t,j}^h&gt;e^{-5}\approx 6.7\times10^{-3}
+$$1，reciprocal rescaling 小于 $$
+\alpha_{t,j}^h&gt;e^{-5}\approx 6.7\times10^{-3}
+$$2，仍在 BF16 动态范围内。这样 diagonal 和 off-diagonal causal tiles 都可以走 dense Tensor Core GEMM，减少原先 position-pair diagonal path 的瓶颈。</p>
+<p>K3 的 full-rank output gate 为：</p>
+<p>$$
+y_t=W_o\left[\operatorname{Sigmoid}(W_gx_t)\odot\operatorname{RMSNorm}(\tilde{o}_t)\right]
+$$</p>
+<p><img alt="K3 KDA Gated MLA and AttnRes" decoding="async" loading="lazy" src="assets/kimi_series/kimi_k3_kda_gated_mla_attnres_p5.png"/></p>
+<p>图：Kimi K3 technical report 第 5 页，包含 KDA lower-bounded decay、Gated MLA 和 AttnRes 相邻定义。</p>
+<h3 id="1-4-为什么-k3-不是纯-kda-而是-kda-gated-mla">1.4 为什么 K3 不是纯 KDA，而是 KDA + Gated MLA</h3>
+<p>K3 每个 block 中使用 3 个 KDA layers + 1 个 Gated MLA layer，整个 backbone 为 69 KDA + 24 Gated MLA，末尾额外放一个 Gated MLA，确保最后一层仍能执行全局 attention。</p>
+<p>这个组合的取舍是：</p>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>纯 KDA 的优势</th>
+<th>纯 KDA 的问题</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>cache 固定、长上下文成本低、递推状态适合 1M context</td>
+<td>对精确 token-token 检索、needle 类任务和跨远距离证据绑定可能弱于 full/global attention</td>
+</tr>
+</tbody>
+</table></div>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>Gated MLA 的作用</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>周期性提供 unrestricted global content interaction</td>
+<td>补偿有限状态 memory 对精确全局交互的不足</td>
+</tr>
+<tr>
+<td>使用 NoPE</td>
+<td>K3 把位置/recency 信息交给 KDA，不再为 MLA queries/keys 加显式 positional encoding</td>
+</tr>
+<tr>
+<td>full-rank gate</td>
+<td>让每个 token 自适应调制从 global attention 读出的通道</td>
+</tr>
+</tbody>
+</table></div>
+<p>Gated MLA 的输出门控为：</p>
+<p>$$
+y_t=W_o\left[\operatorname{Sigmoid}(W_gx_t)\odot\tilde{o}_t\right]
+$$</p>
+<h3 id="1-5-kda-的系统共设计-flashkda-kcp-prefix-cache">1.5 KDA 的系统共设计：FlashKDA、KCP、prefix cache</h3>
+<p>KDA 不是只改模型结构。K3 report 专门给了 KDA 的系统共设计。</p>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>系统点</th>
+<th>解决的问题</th>
+<th>K3 做法</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>FlashKDA</td>
+<td>chunkwise KDA 训练/prefill 中，chunk 内并行与 chunk 间状态传播交替导致 SM 空闲</td>
+<td>CUTLASS-based chunkwise kernel，重叠 intra-chunk computation 与 cross-chunk state propagation</td>
+</tr>
+<tr>
+<td>intra-device context parallelism</td>
+<td>超长 prefill 下，纯 TP 只分 heads，不能缩短 recurrent path</td>
+<td>在单 rank 的 SM 内切分 sequence segment，并合成 exact initial state</td>
+</tr>
+<tr>
+<td>KDA Context Parallelism（KCP）</td>
+<td>跨设备 context parallelism 不能像普通 linear attention 那样直接求和状态</td>
+<td>每段拆成 local zero-state contribution 和 cumulative transition，用 prefix scan 组合</td>
+</tr>
+<tr>
+<td>KDA-aware prefix cache</td>
+<td>KDA recurrent state 和 MLA KV cache 生命周期、大小、颗粒度都不同</td>
+<td>统一 paged pool，MLA 细粒度 hash blocks，KDA 在 hash endpoint 保存 sparse checkpoints</td>
+</tr>
+</tbody>
+</table></div>
+<p>KCP 的关键原因是 KDA 状态更新不是加法递推。写作：</p>
+<p>$$
+S_t=M_tS_{t-1}+\beta_t k_t v_t^\top
+$$</p>
+<p>其中：</p>
+<p>$$
+M_t=\left(I-\beta_t k_t k_t^\top\right)\operatorname{Diag}(\alpha_t)
+$$</p>
+<p>所以某段序列对输入 state 的作用依赖 $$
+\alpha_{t,j}^h&gt;e^{-5}\approx 6.7\times10^{-3}
+$$3 的连乘，不能只把“从零开始得到的 state”相加。K3 的做法是让每个 rank 计算两个本地片段：</p>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>片段</th>
+<th>作用</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>$$
+\alpha_{t,j}^h&gt;e^{-5}\approx 6.7\times10^{-3}
+$$4</td>
+<td>本段从 $$
+\alpha_{t,j}^h&gt;e^{-5}\approx 6.7\times10^{-3}
+$$5 开始生成的状态</td>
+</tr>
+<tr>
+<td>$$
+\alpha_{t,j}^h&gt;e^{-5}\approx 6.7\times10^{-3}
+$$6</td>
+<td>本段对输入 state 的 cumulative transition</td>
+</tr>
+</tbody>
+</table></div>
+<p>然后跨 rank all-gather 这些固定大小张量，用 associative prefix scan 重构每个 rank 的 incoming state。</p>
+<p><img alt="K3 KDA Context Parallelism" decoding="async" loading="lazy" src="assets/kimi_series/kimi_k3_kda_context_parallelism_p18.png"/></p>
+<p>图：Kimi K3 technical report 第 18 页，说明 KDA Context Parallelism 如何把本地 transition 和 zero-state contribution 组合起来。</p>
+<p>KDA-aware prefix cache 的关键是“命中边界必须同时满足 MLA KV 和 KDA state”。K3 把 MLA 的物理 cache block 和 prefix hash block 解耦，例如 physical block 6144 tokens、hash block 512 tokens；KDA checkpoint 只在 hash endpoint 的稀疏子集保存，通常保留会话轮次边界。命中时必须找到同一边界处的 MLA blocks 和所有 KDA cache groups 的 checkpoint。</p>
+<p><img alt="K3 KDA prefix cache" decoding="async" loading="lazy" src="assets/kimi_series/kimi_k3_kda_prefix_cache_p23.png"/></p>
+<p>图：Kimi K3 technical report 第 23 页，Figure 12 展示 KDA checkpoint 与 MLA hash blocks 的细粒度 prefix cache。</p>
+<h3 id="1-6-kda-的收益和风险">1.6 KDA 的收益和风险</h3>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>维度</th>
+<th>收益</th>
+<th>风险或代价</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>训练</td>
+<td>1M context 训练更可行，KCP 让 recurrent state 可以跨设备并行</td>
+<td>KDA recurrence 比 attention 更依赖专用 kernel，普通实现容易慢</td>
+</tr>
+<tr>
+<td>prefill</td>
+<td>fixed recurrent state 降低长上下文 cache 压力</td>
+<td>chunkwise kernel、context parallelism、state checkpoint 都需要实现支持</td>
+</tr>
+<tr>
+<td>decode</td>
+<td>状态大小固定，理论上比长 KV cache 更友好</td>
+<td>speculative decoding 回滚复杂，需要 replay projected inputs 或保存额外状态</td>
+</tr>
+<tr>
+<td>prefix cache</td>
+<td>prefix reuse 可扩展到 hybrid KDA-MLA</td>
+<td>只有 MLA 与所有 KDA groups 在同一边界都命中才可复用</td>
+</tr>
+</tbody>
+</table></div>
+<p>对推理服务落地来说，KDA 不能按普通 MHA/MLA 模型处理。接入 K3 时至少要检查：</p>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>检查项</th>
+<th>为什么重要</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>vLLM 是否支持 KDA layer 和 KDA state</td>
+<td>否则模型即使能加载权重，也可能无法正确推理</td>
+</tr>
+<tr>
+<td>prefix cache 是否 KDA-aware</td>
+<td>普通 KV block hash 不足以复用 KDA state</td>
+</tr>
+<tr>
+<td>P-D 分离时 KDA state 如何传输</td>
+<td>prefill/decode TP degree 不同会触发 re-layout</td>
+</tr>
+<tr>
+<td>speculative decoding 是否支持状态回滚</td>
+<td>draft token 被拒绝后 recurrent state 不能简单倒退</td>
+</tr>
+</tbody>
+</table></div>
+</section><section class="share-section-card"><h2 id="2-attention-residuals-把-attention-从-token-维度扩展到-layer-维度">2. Attention Residuals：把 attention 从 token 维度扩展到 layer 维度</h2>
+<h3 id="2-1-k3-为什么需要-attnres">2.1 K3 为什么需要 AttnRes</h3>
+<p>K3 有 93 层、1M context、hybrid KDA-MLA attention。随着深度增加，普通 residual connection 会把历史层信息压缩进当前 hidden state，早期层表示是否能被后层保真读取，取决于中间层变换是否保留这些信息。</p>
+<p>K3 report 对这个问题的类比很明确：标准 residual connection 在深度维度上类似 RNN，它把所有之前的信息压成一个状态；Transformer 当年用 attention 替代时间维度 RNN，让每个位置能选择性访问历史位置；AttnRes 则把同样思想搬到深度维度，让每层选择性访问前序层表示。</p>
+<h3 id="2-2-full-attnres-的定义">2.2 Full AttnRes 的定义</h3>
+<p>对第 $$
+\alpha_{t,j}^h&gt;e^{-5}\approx 6.7\times10^{-3}
+$$7 层，K3 定义一个 layer-specific learnable pseudo-query：</p>
+<p>$$
+q_l=w_l\in\mathbb{R}^d
+$$</p>
+<p>前序层的 keys 和 values 为：</p>
+<p>$$
+\tilde{o}_t=S_t^\top q_t
+$$0</p>
+<p>其中 $$
+\alpha_{t,j}^h&gt;e^{-5}\approx 6.7\times10^{-3}
+$$8 是 token embedding，$$
+\alpha_{t,j}^h&gt;e^{-5}\approx 6.7\times10^{-3}
+$$9 是第 $$
+y_t=W_o\left[\operatorname{Sigmoid}(W_gx_t)\odot\operatorname{RMSNorm}(\tilde{o}_t)\right]
+$$0 层输出。注意力核为：</p>
+<p>$$
+\tilde{o}_t=S_t^\top q_t
+$$1</p>
+<p>权重和输出为：</p>
+<p>$$
+\tilde{o}_t=S_t^\top q_t
+$$2</p>
+<p>$$
+\tilde{o}_t=S_t^\top q_t
+$$3</p>
+<p>这个机制的核心不是“把所有残差相加”，而是“让当前层学习应该读哪些历史层”。RMSNorm 的作用是避免某些大幅值层输出仅因范数大而支配权重。</p>
+<h3 id="2-3-block-attnres-k3-的可部署版本">2.3 Block AttnRes：K3 的可部署版本</h3>
+<p>Full AttnRes 的算术成本在 $$
+y_t=W_o\left[\operatorname{Sigmoid}(W_gx_t)\odot\operatorname{RMSNorm}(\tilde{o}_t)\right]
+$$1 时还可接受，但真正麻烦是 memory 和 pipeline parallelism 下的跨 stage 通信：需要保留所有前层输出，开销为 $$
+y_t=W_o\left[\operatorname{Sigmoid}(W_gx_t)\odot\operatorname{RMSNorm}(\tilde{o}_t)\right]
+$$2。</p>
+<p>K3 使用 Block AttnRes：把 $$
+y_t=W_o\left[\operatorname{Sigmoid}(W_gx_t)\odot\operatorname{RMSNorm}(\tilde{o}_t)\right]
+$$3 层分成 $$
+y_t=W_o\left[\operatorname{Sigmoid}(W_gx_t)\odot\operatorname{RMSNorm}(\tilde{o}_t)\right]
+$$4 个 blocks，每个 block 内把层输出聚合成一个 block representation。对 block $$
+y_t=W_o\left[\operatorname{Sigmoid}(W_gx_t)\odot\operatorname{RMSNorm}(\tilde{o}_t)\right]
+$$5，若层集合为 $$
+y_t=W_o\left[\operatorname{Sigmoid}(W_gx_t)\odot\operatorname{RMSNorm}(\tilde{o}_t)\right]
+$$6，则：</p>
+<p>$$
+\tilde{o}_t=S_t^\top q_t
+$$4</p>
+<p>第 $$
+y_t=W_o\left[\operatorname{Sigmoid}(W_gx_t)\odot\operatorname{RMSNorm}(\tilde{o}_t)\right]
+$$7 个 block 的第 $$
+y_t=W_o\left[\operatorname{Sigmoid}(W_gx_t)\odot\operatorname{RMSNorm}(\tilde{o}_t)\right]
+$$8 层看到的 value matrix 为：</p>
+<p>$$
+\tilde{o}_t=S_t^\top q_t
+$$5</p>
+<p>其中 $$
+y_t=W_o\left[\operatorname{Sigmoid}(W_gx_t)\odot\operatorname{RMSNorm}(\tilde{o}_t)\right]
+$$9，即 embedding 始终作为一个 source。这样内存/通信开销从：</p>
+<p>$$
+\tilde{o}_t=S_t^\top q_t
+$$6</p>
+<p>K3 采用 $$
+y_t=W_o\left[\operatorname{Sigmoid}(W_gx_t)\odot\tilde{o}_t\right]
+$$0 的经验设置：93 层分成 8 个 blocks，block size 约 12 层，加上 embedding 后共有 9 个 block-level sources。</p>
+<h3 id="2-4-attnres-与-kda-的关系">2.4 AttnRes 与 KDA 的关系</h3>
+<p>KDA 解决的是 token sequence 维度，AttnRes 解决的是 network depth 维度。两者不是替代关系。</p>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>问题</th>
+<th>KDA 的回答</th>
+<th>AttnRes 的回答</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>历史 token 怎么保留</td>
+<td>用 recurrent state 压缩长程上下文</td>
+<td>不直接解决 token 维度</td>
+</tr>
+<tr>
+<td>历史层表示怎么保留</td>
+<td>不直接解决层间压缩</td>
+<td>用 pseudo-query 选择性读前序层/block 表示</td>
+</tr>
+<tr>
+<td>为什么 K3 同时需要两者</td>
+<td>1M context 需要序列维度高效</td>
+<td>93 层深模型需要深度维度信息流</td>
+</tr>
+</tbody>
+</table></div>
+<p>更具体地说，KDA 把百万 token 的历史压入固定状态，会不可避免地损失部分可精确检索的信息；周期性 Gated MLA 提供全局 token-token 交互，而 AttnRes 让模型在深度方向上重新访问较早层的表示。三者一起服务于“长序列 + 深网络”的信息保真。</p>
+<h3 id="2-5-attnres-的-serving-kernel">2.5 AttnRes 的 serving kernel</h3>
+<p>K3 report 说明 Block AttnRes 在 serving 中采用两阶段：</p>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>阶段</th>
+<th>做法</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>inter-block pass</td>
+<td>批量读取 cached block representations，每个 block 读一次</td>
+</tr>
+<tr>
+<td>intra-block merge</td>
+<td>通过 online softmax 合并当前 block 的 partial sum</td>
+</tr>
+</tbody>
+</table></div>
+<p>Prefill 时，为避免每个 TP rank 都 materialize block representations，K3 使用 sequence parallelism：把 TP all-reduce 拆成 reduce-scatter 和 all-gather，并把 intra-block kernel 插在二者之间，让每个 token 的 block representation 只在一个 rank 上物化。</p>
+<p>Decode 时，inter-block kernel 放到 side stream，与 main stream 的独立计算重叠；intra-block merge、partial-sum update 和后续 RMSNorm 融进前面的 TP all-reduce，减少单独 kernel 和内存读写。</p>
+<p><img alt="K3 kernels for KDA and AttnRes" decoding="async" loading="lazy" src="assets/kimi_series/kimi_k3_kernels_kda_attnres_p24.png"/></p>
+<p>图：Kimi K3 technical report 第 24 页，包含 KDA、Block AttnRes、Stable LatentMoE 的 serving kernel 优化入口。</p>
+<h3 id="2-6-attnres-的收益和边界">2.6 AttnRes 的收益和边界</h3>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>维度</th>
+<th>收益</th>
+<th>边界</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>深层信息流</td>
+<td>避免所有历史层信息被普通 residual 统一压缩</td>
+<td>公开报告没有给 AttnRes 单独 ablation</td>
+</tr>
+<tr>
+<td>长程任务</td>
+<td>早期层捕获的局部证据、格式状态、工具状态更容易被后续层读取</td>
+<td>对 coding、BrowseComp、long-context reasoning 的单项贡献未公开</td>
+</tr>
+<tr>
+<td>系统实现</td>
+<td>Block AttnRes 把开销控制到 $$
+y_t=W_o\left[\operatorname{Sigmoid}(W_gx_t)\odot\tilde{o}_t\right]
+$$1，并有专门 serving kernel</td>
+<td>vLLM 或其他推理框架是否支持完整 Block AttnRes 仍需确认</td>
+</tr>
+</tbody>
+</table></div>
+<p>K3 report 的 case study 提到，Kimi K3 在 GPU kernel optimization 任务中把 AttnRes latency 从 283.6 ms 降到 114.4 ms。但这属于 K3 作为 coding agent 优化 kernel 的能力案例，不等价于 AttnRes 模块对模型质量的消融证据。</p>
+</section><section class="share-section-card"><h2 id="3-stable-moe-让-896-experts-top-16-的宽度扩展稳定下来">3. Stable MoE：让 896 experts / Top-16 的宽度扩展稳定下来</h2>
+<h3 id="3-1-k3-的-moe-扩展为什么需要-stable">3.1 K3 的 MoE 扩展为什么需要“stable”</h3>
+<p>K3 的专家配置比 K2 大很多：</p>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>项</th>
+<th>Kimi K2</th>
+<th>Kimi K3</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>routed experts</td>
+<td>384</td>
+<td>896</td>
+</tr>
+<tr>
+<td>active experts per token</td>
+<td>8</td>
+<td>16</td>
+</tr>
+<tr>
+<td>shared experts</td>
+<td>1</td>
+<td>2</td>
+</tr>
+<tr>
+<td>MoE hidden dimension per expert</td>
+<td>2048</td>
+<td>3072</td>
+</tr>
+<tr>
+<td>Latent MoE dimension</td>
+<td>无</td>
+<td>3584</td>
+</tr>
+<tr>
+<td>sparsity</td>
+<td>384/8 = 48</td>
+<td>896/16 = 56</td>
+</tr>
+</tbody>
+</table></div>
+<p>专家池扩大带来两个直接问题：</p>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>问题</th>
+<th>具体表现</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>计算链更不稳定</td>
+<td>routed path 经过 down projection、gated expert FFN、up projection，近似四个矩阵乘连续组合，2.8T 规模下内部 activation 容易爆炸</td>
+</tr>
+<tr>
+<td>负载均衡更难</td>
+<td>896 experts 的 router bias 更新和专家负载波动进入大规模分布式训练瓶颈，专家过热或死亡都会拖慢 EP 训练</td>
+</tr>
+</tbody>
+</table></div>
+<p>所以 K3 的 Stable MoE 不是一个单独小技巧，而是一组组合设计：LatentMoE 负责把 routed path 变窄，RMSNorm 和 SiTU-GLU 负责抑制激活异常，Quantile Balancing 负责路由负载均衡，MoonEP 和 serving kernels 负责系统侧负载与通信。</p>
+<h3 id="3-2-stable-latentmoe-的结构">3.2 Stable LatentMoE 的结构</h3>
+<p>LatentMoE 的基本思想是把 full model width 和 routed expert width 分离：</p>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>路径</th>
+<th>作用</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>shared experts</td>
+<td>处理 full-width token representation，保留通用变换能力</td>
+</tr>
+<tr>
+<td>routed experts</td>
+<td>只在 latent width $$
+y_t=W_o\left[\operatorname{Sigmoid}(W_gx_t)\odot\tilde{o}_t\right]
+$$2 上工作，降低专家扩展时的通信和 expert-weight traffic</td>
+</tr>
+</tbody>
+</table></div>
+<p>K3 report 给出的 Stable LatentMoE 形式是：</p>
+<p>$$
+\tilde{o}_t=S_t^\top q_t
+$$7</p>
+<p>$$
+\tilde{o}_t=S_t^\top q_t
+$$8</p>
+<p>其中：</p>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>符号</th>
+<th>含义</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>$$
+y_t=W_o\left[\operatorname{Sigmoid}(W_gx_t)\odot\tilde{o}_t\right]
+$$3</td>
+<td>把 full-width 输入投到 routed latent space</td>
+</tr>
+<tr>
+<td>$$
+y_t=W_o\left[\operatorname{Sigmoid}(W_gx_t)\odot\tilde{o}_t\right]
+$$4</td>
+<td>routed expert，在 latent width 上工作</td>
+</tr>
+<tr>
+<td>$$
+y_t=W_o\left[\operatorname{Sigmoid}(W_gx_t)\odot\tilde{o}_t\right]
+$$5</td>
+<td>shared expert，保留 full-width path</td>
+</tr>
+<tr>
+<td>$$
+y_t=W_o\left[\operatorname{Sigmoid}(W_gx_t)\odot\tilde{o}_t\right]
+$$6</td>
+<td>router weight，由 Quantile Balancing 路由规则定义</td>
+</tr>
+<tr>
+<td>$$
+y_t=W_o\left[\operatorname{Sigmoid}(W_gx_t)\odot\tilde{o}_t\right]
+$$7</td>
+<td>K3 每层固定两个 shared experts</td>
+</tr>
+</tbody>
+</table></div>
+<p>RMSNorm 插在 routed aggregation 和 up-projection 之间，目的不是为了好看，而是降低 $$
+y_t=W_o\left[\operatorname{Sigmoid}(W_gx_t)\odot\tilde{o}_t\right]
+$$8 的尺度波动对后续 $$
+y_t=W_o\left[\operatorname{Sigmoid}(W_gx_t)\odot\tilde{o}_t\right]
+$$9 和 shared branch 合流的影响。K3 report 明确说这既稳定训练，也持续改善 validation loss 和 downstream benchmarks。</p>
+<h3 id="3-3-situ-glu-把-swiglu-的大值爆炸封顶">3.3 SiTU-GLU：把 SwiGLU 的大值爆炸封顶</h3>
+<p>SwiGLU 的经验效果强，但两个 multiplicative factors 都是无界的。大模型和低精度训练中，如果 gate branch 和 up branch 同时出现大坐标，乘积容易制造 activation outliers。</p>
+<p>K3 提出 Sigmoid Tanh Unit GLU（SiTU-GLU）：</p>
+<p>$$
+\tilde{o}_t=S_t^\top q_t
+$$9</p>
+<p>K3 使用：</p>
+<p>$$
+g_t^h=g_{\min}\operatorname{Sigmoid}\left(e^{A^h}z_t^h\right)\in(g_{\min},0)^{d_k}
+$$0</p>
+<p>因此每个输出坐标满足：</p>
+<p>$$
+g_t^h=g_{\min}\operatorname{Sigmoid}\left(e^{A^h}z_t^h\right)\in(g_{\min},0)^{d_k}
+$$1</p>
+<p>这个设计保留了 SwiGLU 的局部形状：当 $$
+S_t=M_tS_{t-1}+\beta_t k_t v_t^\top
+$$0 接近 0 时，</p>
+<p>$$
+g_t^h=g_{\min}\operatorname{Sigmoid}\left(e^{A^h}z_t^h\right)\in(g_{\min},0)^{d_k}
+$$2</p>
+<p>所以 SiTU-GLU 在原点附近与 SwiGLU 一阶一致；当输入很大时，tanh smooth cap 把输出封顶。相比 hard clamp，smooth cap 在饱和边界外仍有非零梯度，训练行为更平滑。</p>
+<p><img alt="K3 Stable LatentMoE and SiTU-GLU" decoding="async" loading="lazy" src="assets/kimi_series/kimi_k3_stable_latentmoe_situ_glu_p7.png"/></p>
+<p>图：Kimi K3 technical report 第 7 页，Figure 4 展示 GLU、SwiGLU、SiTU-GLU 的 branch 定义和曲线，并给出 Stable LatentMoE 的公式。</p>
+<h3 id="3-4-quantile-balancing-不用-auxiliary-loss-的专家负载均衡">3.4 Quantile Balancing：不用 auxiliary loss 的专家负载均衡</h3>
+<p>传统 MoE 常用 auxiliary load balancing loss。问题是 loss 权重需要调，且可能和主任务优化相互拉扯。K3 采用 auxiliary-loss-free routing：给每个专家一个 bias $$
+S_t=M_tS_{t-1}+\beta_t k_t v_t^\top
+$$1，用它影响 Top-k dispatch，但不把 bias 放进 mixture weight。</p>
+<p>对 token $$
+S_t=M_tS_{t-1}+\beta_t k_t v_t^\top
+$$2，router score 为：</p>
+<p>$$
+g_t^h=g_{\min}\operatorname{Sigmoid}\left(e^{A^h}z_t^h\right)\in(g_{\min},0)^{d_k}
+$$3</p>
+<p>K3 的 routing rule 是：</p>
+<p>$$
+g_t^h=g_{\min}\operatorname{Sigmoid}\left(e^{A^h}z_t^h\right)\in(g_{\min},0)^{d_k}
+$$4</p>
+<p>$$
+g_t^h=g_{\min}\operatorname{Sigmoid}\left(e^{A^h}z_t^h\right)\in(g_{\min},0)^{d_k}
+$$5</p>
+<p>注意 $$
+S_t=M_tS_{t-1}+\beta_t k_t v_t^\top
+$$3 只影响被派发到哪些专家，不影响 $$
+S_t=M_tS_{t-1}+\beta_t k_t v_t^\top
+$$4 的归一化权重。这样 dispatch 可以均衡，但 router 的梯度目标不被 bias 直接扭曲。</p>
+<p>设 batch 中有 $$
+S_t=M_tS_{t-1}+\beta_t k_t v_t^\top
+$$5 个 tokens、$$
+S_t=M_tS_{t-1}+\beta_t k_t v_t^\top
+$$6 个 routed experts、Top-k，则每个专家的目标负载为：</p>
+<p>$$
+g_t^h=g_{\min}\operatorname{Sigmoid}\left(e^{A^h}z_t^h\right)\in(g_{\min},0)^{d_k}
+$$6</p>
+<p>Quantile Balancing 的思路是：先做 Top-$$
+S_t=M_tS_{t-1}+\beta_t k_t v_t^\top
+$$7，得到每个 token 的 cutoff $$
+S_t=M_tS_{t-1}+\beta_t k_t v_t^\top
+$$8，再看每个专家 $$
+S_t=M_tS_{t-1}+\beta_t k_t v_t^\top
+$$9 的 margin：</p>
+<p>$$
+g_t^h=g_{\min}\operatorname{Sigmoid}\left(e^{A^h}z_t^h\right)\in(g_{\min},0)^{d_k}
+$$7</p>
+<p>下一步 bias 由分位数确定：</p>
+<p>$$
+g_t^h=g_{\min}\operatorname{Sigmoid}\left(e^{A^h}z_t^h\right)\in(g_{\min},0)^{d_k}
+$$8</p>
+<p>$$
+g_t^h=g_{\min}\operatorname{Sigmoid}\left(e^{A^h}z_t^h\right)\in(g_{\min},0)^{d_k}
+$$9</p>
+<p>直觉上，QB 为每个专家选择一个阈值，让它刚好接收目标数量 $$
+M_t=\left(I-\beta_t k_t k_t^\top\right)\operatorname{Diag}(\alpha_t)
+$$0 的 token。K3 report 的小例子中，$$
+M_t=\left(I-\beta_t k_t k_t^\top\right)\operatorname{Diag}(\alpha_t)
+$$1，普通 Top-k 得到负载 $$
+M_t=\left(I-\beta_t k_t k_t^\top\right)\operatorname{Diag}(\alpha_t)
+$$2，QB 后变成 $$
+M_t=\left(I-\beta_t k_t k_t^\top\right)\operatorname{Diag}(\alpha_t)
+$$3。</p>
+<p><img alt="K3 Quantile Balancing" decoding="async" loading="lazy" src="assets/kimi_series/kimi_k3_quantile_balancing_p8.png"/></p>
+<p>图：Kimi K3 technical report 第 8 页，Figure 5 展示 Quantile Balancing 如何把不均衡路由变成均衡负载。</p>
+<h3 id="3-5-大规模训练中的-qb-histogram-estimator">3.5 大规模训练中的 QB histogram estimator</h3>
+<p>真实训练中不可能把全局 batch 中所有 margin gather 到一起做精确分位数。K3 使用 histogram estimator：</p>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>步骤</th>
+<th>做法</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>本地统计</td>
+<td>每个 rank 为每个 expert 统计 margin histogram</td>
+</tr>
+<tr>
+<td>全局汇总</td>
+<td>用一次 all-reduce 求和各 rank bin counts</td>
+</tr>
+<tr>
+<td>近似分位数</td>
+<td>从 pooled counts 恢复全局 batch 的 quantile</td>
+</tr>
+<tr>
+<td>通信成本</td>
+<td>每个 expert 只传几百个 bins，而不是传所有 token-expert margins</td>
+</tr>
+</tbody>
+</table></div>
+<p>这个设计的关键是 counts 可加，所以不受 token shard 方式影响；代价是存在 bin width 带来的估计误差。</p>
+<h3 id="3-6-stable-moe-的系统侧-moonep-与-serving-kernel">3.6 Stable MoE 的系统侧：MoonEP 与 serving kernel</h3>
+<p>Stable MoE 在模型侧让路由更稳，在系统侧还需要让 EP 执行更可预测。</p>
+<p>K3 report 对 MoonEP 的描述是：每个 rank 接收固定 $$
+M_t=\left(I-\beta_t k_t k_t^\top\right)\operatorname{Diag}(\alpha_t)
+$$4 tokens，并在每个 rank 最多 $$
+M_t=\left(I-\beta_t k_t k_t^\top\right)\operatorname{Diag}(\alpha_t)
+$$5 个 redundant experts 的条件下保持 perfect balance。系统实现包括：</p>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>机制</th>
+<th>作用</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>online planning kernel</td>
+<td>近似求解专家分配，避免 CPU/host 同步成为瓶颈</td>
+</tr>
+<tr>
+<td>zero-copy communication</td>
+<td>直接把 tokens 发到 remote rank 的 expert-grouped positions</td>
+</tr>
+<tr>
+<td>static shapes</td>
+<td>消除 per-layer MoE host synchronization</td>
+</tr>
+<tr>
+<td>bounded redundant experts</td>
+<td>用有限冗余换取固定负载和更稳定流水</td>
+</tr>
+</tbody>
+</table></div>
+<p>Serving 侧，K3 对 Stable LatentMoE 还做了专门 kernel：</p>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>优化</th>
+<th>作用</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>fuse latent down-projection with router</td>
+<td>把 latent $$
+M_t=\left(I-\beta_t k_t k_t^\top\right)\operatorname{Diag}(\alpha_t)
+$$6 和 router 合并成一个 GEMM</td>
+</tr>
+<tr>
+<td>shard latent weight matrices</td>
+<td>降低 latent GEMM 的冗余权重流量</td>
+</tr>
+<tr>
+<td>fuse output all-gather into GEMM epilogue</td>
+<td>用 multimem store 指令减少额外通信开销</td>
+</tr>
+<tr>
+<td>overlap communication with shared experts</td>
+<td>把 latent path 的通信藏在 shared-expert computation 后面</td>
+</tr>
+<tr>
+<td>token-centric MoE decoding kernel</td>
+<td>小 batch decode 下 group GEMM 变成 weight streaming，使用 WarpDecode 风格降低内存瓶颈</td>
+</tr>
+</tbody>
+</table></div>
+<h3 id="3-7-stable-moe-的收益和风险">3.7 Stable MoE 的收益和风险</h3>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>维度</th>
+<th>收益</th>
+<th>风险或边界</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>模型容量</td>
+<td>896 experts / Top-16 提供更大的专家特化空间</td>
+<td>单独归因到 expert 数、Top-k、latent width 的 ablation 未完全公开</td>
+</tr>
+<tr>
+<td>训练稳定性</td>
+<td>RMSNorm、SiTU-GLU、QB 共同控制 scale、activation、load</td>
+<td>SiTU-GLU 的 $$
+M_t=\left(I-\beta_t k_t k_t^\top\right)\operatorname{Diag}(\alpha_t)
+$$7 是否跨模型可迁移需要验证</td>
+</tr>
+<tr>
+<td>分布式效率</td>
+<td>QB + MoonEP 让 EP 负载更可预测</td>
+<td>真实 expert load histogram、rank dispatch 方差和 tail latency 需要实测</td>
+</tr>
+<tr>
+<td>服务实现</td>
+<td>fused kernels 和 token-centric decode 降低 MoE serving 开销</td>
+<td>vLLM 是否完整支持 K3 Stable LatentMoE、MoonEP、MXFP 格式仍需跟进</td>
+</tr>
+</tbody>
+</table></div>
+</section><section class="share-section-card"><h2 id="4-三项技术的组合关系">4. 三项技术的组合关系</h2>
+<p>K3 的三项技术不是孤立模块，而是按 token、layer、channel 三个混合维度协同。</p>
+<div class="mermaid">flowchart LR
+    A["1M context 输入"] --&gt; B["KDA：固定 recurrent state 承载长程历史"]
+    B --&gt; C["Gated MLA：周期性全局 token-token 交互"]
+    C --&gt; D["AttnRes：跨层选择性检索历史表示"]
+    D --&gt; E["Stable LatentMoE：宽度维度专家混合"]
+    E --&gt; F["K3：2.8T / 104B active / 1M context"]
+    G["FlashKDA / KCP / KDA prefix cache"] --&gt; B
+    H["Block AttnRes kernels"] --&gt; D
+    I["QB / SiTU-GLU / MoonEP"] --&gt; E
+</div>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>组合</th>
+<th>关键含义</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>KDA + Gated MLA</td>
+<td>KDA 提供低 cache 成本的长程状态，Gated MLA 周期性保留全局精确交互</td>
+</tr>
+<tr>
+<td>KDA + AttnRes</td>
+<td>一个解决序列维度，一个解决深度维度，避免 1M token 和 93 层同时带来的信息瓶颈</td>
+</tr>
+<tr>
+<td>Stable MoE + AttnRes</td>
+<td>MoE 扩宽能力空间，AttnRes 让深层模块不必只依赖局部 residual 累积</td>
+</tr>
+<tr>
+<td>Stable MoE + MoonEP</td>
+<td>模型侧路由均衡和系统侧专家执行均衡必须配套，否则 896 experts 会转化为 tail latency</td>
+</tr>
+</tbody>
+</table></div>
+<p>一句话概括：K3 的核心不是“用了 KDA”或“专家更多”，而是把长序列、深层网络、超大专家池三个方向同时扩展，并为每个方向配了相应的训练和 serving 系统。</p>
+</section><section class="share-section-card"><h2 id="5-工程落地与推理实验关注点">5. 工程落地与推理实验关注点</h2>
+<h3 id="5-1-接入-k3-前必须确认的实现问题">5.1 接入 K3 前必须确认的实现问题</h3>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>模块</th>
+<th>检查项</th>
+<th>不确认的风险</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>KDA</td>
+<td>模型 config、KDA kernel、KDA state layout、KDA prefix cache</td>
+<td>普通 KV cache 逻辑无法复用 KDA state，长上下文会退化或错误</td>
+</tr>
+<tr>
+<td>Gated MLA</td>
+<td>NoPE MLA、full-rank gate、FP32 attention output training 逻辑是否影响推理实现</td>
+<td>以 K2 MLA 假设直接加载可能漏掉门控路径</td>
+</tr>
+<tr>
+<td>AttnRes</td>
+<td>Block AttnRes state、block source 数、kernel fusion</td>
+<td>标准 residual path 无法等价替代 AttnRes</td>
+</tr>
+<tr>
+<td>Stable LatentMoE</td>
+<td>latent routed width、shared/routed experts、QB frozen bias、SiTU-GLU、量化格式</td>
+<td>普通 MoE expert mapping 和 activation function 可能不兼容</td>
+</tr>
+<tr>
+<td>EP / serving</td>
+<td>expert parallel、rank dispatch、KDA/MLA cache transfer、P-D 分离 re-layout</td>
+<td>平均吞吐看起来可用，但 p99 latency 和 cache miss 成本不可控</td>
+</tr>
+</tbody>
+</table></div>
+<h3 id="5-2-推荐-benchmark-指标">5.2 推荐 benchmark 指标</h3>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>方向</th>
+<th>指标</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>KDA 长上下文</td>
+<td>TTFT、prefill tokens/s、decode TPOT、KDA state transfer bytes、prefix cache hit boundary、cache miss recompute tokens</td>
+</tr>
+<tr>
+<td>AttnRes</td>
+<td>block 数、block state bytes、prefill/decode extra latency、kernel launch 数、TP all-reduce 融合效果</td>
+</tr>
+<tr>
+<td>Stable MoE</td>
+<td>expert load variance、rank dispatch bytes、热门专家 p99、token-centric decode kernel 吞吐、small-batch latency</td>
+</tr>
+<tr>
+<td>三者组合</td>
+<td>1M context 下 quality/cost ratio、长程 coding 成功率、BrowseComp/DeepSearch 类型任务 wall time、cache-aware routing 收益</td>
+</tr>
+</tbody>
+</table></div>
+<h3 id="5-3-建议实验">5.3 建议实验</h3>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>实验</th>
+<th>做法</th>
+<th>目的</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>KDA prefix cache 微基准</td>
+<td>构造共享前缀长度为 512、2560、6144、128K 的请求，对比 cache hit/miss</td>
+<td>验证 KDA checkpoint 与 MLA hash block 边界对 TTFT 的影响</td>
+</tr>
+<tr>
+<td>MoE tail latency 压测</td>
+<td>构造不同 batch token 分布，记录 expert load 和 p99 decode latency</td>
+<td>验证 Stable MoE 是否仍会出现专家拥塞</td>
+</tr>
+<tr>
+<td>AttnRes kernel 开销</td>
+<td>分别测打开/关闭或模拟 AttnRes block state 的额外内存与 latency</td>
+<td>判断 Block AttnRes 对 serving 的实际成本</td>
+</tr>
+<tr>
+<td>1M coding workload</td>
+<td>使用长 repo prompt + 多轮工具调用，记录 cache hit、工具步、最终测试通过率</td>
+<td>观察 KDA、AttnRes、Stable MoE 对长程 coding 的组合收益</td>
+</tr>
+</tbody>
+</table></div>
+</section><section class="share-section-card"><h2 id="6-参考链接">6. 参考链接</h2>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>来源</th>
+<th>链接</th>
+<th>用途</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Kimi K3 官方博客</td>
+<td>https://www.kimi.com/blog/kimi-k3</td>
+<td>K3 发布定位、公开 benchmark、核心技术概述</td>
+</tr>
+<tr>
+<td>Kimi K3 Hugging Face</td>
+<td>https://huggingface.co/moonshotai/Kimi-K3</td>
+<td>模型规格、context、架构摘要、使用限制</td>
+</tr>
+<tr>
+<td>Kimi K3 GitHub</td>
+<td>https://github.com/MoonshotAI/Kimi-K3</td>
+<td>技术报告、推理配置、开源入口</td>
+</tr>
+<tr>
+<td>Kimi K3 technical report PDF</td>
+<td>https://github.com/MoonshotAI/Kimi-K3/blob/main/k3_tech_report.pdf</td>
+<td>本文 KDA、AttnRes、Stable LatentMoE 的主要公式和系统证据</td>
+</tr>
+<tr>
+<td>Kimi Linear GitHub</td>
+<td>https://github.com/MoonshotAI/Kimi-Linear</td>
+<td>KDA 前置技术、3:1 hybrid、KDA kernel 与 vLLM implementation</td>
+</tr>
+<tr>
+<td>Kimi Linear paper</td>
+<td>https://huggingface.co/papers/2510.26692</td>
+<td>KDA 与 MLA 混合路线、1M context 性能数据</td>
+</tr>
+<tr>
+<td>FlashKDA</td>
+<td>https://github.com/MoonshotAI/FlashKDA</td>
+<td>KDA kernel 线索</td>
+</tr>
+<tr>
+<td>MoonEP</td>
+<td>https://github.com/MoonshotAI/MoonEP</td>
+<td>K3 专家并行系统线索</td>
+</tr>
+<tr>
+<td>Gated Delta Networks</td>
+<td>https://arxiv.org/abs/2412.06464</td>
+<td>KDA 的 DeltaNet/GDN 背景</td>
+</tr>
+<tr>
+<td>LatentMoE</td>
+<td>https://arxiv.org/abs/2601.18089</td>
+<td>Latent MoE 的结构背景</td>
+</tr>
+<tr>
+<td>BASE Layers</td>
+<td>https://arxiv.org/abs/2103.16716</td>
+<td>balanced assignment 与专家负载均衡背景</td>
+</tr>
+<tr>
+<td>DeepSeek-V2 MLA</td>
+<td>https://arxiv.org/abs/2405.04434</td>
+<td>MLA 背景</td>
+</tr>
+<tr>
+<td>Transformer</td>
+<td>https://arxiv.org/abs/1706.03762</td>
+<td>attention 背景</td>
+</tr>
+<tr>
+<td>ResNet</td>
+<td>https://arxiv.org/abs/1512.03385</td>
+<td>residual connection 背景</td>
+</tr>
+</tbody>
+</table></div>
+</section>
+    </article>
+  </main>
+  <script>
+    window.addEventListener('DOMContentLoaded', () => {
+      if (window.mermaid) {
+        mermaid.initialize({ startOnLoad: true, theme: 'neutral', securityLevel: 'strict' });
+      }
+    });
+    const fill = document.getElementById('progressFill');
+    window.addEventListener('scroll', () => {
+      const h = document.documentElement.scrollHeight - window.innerHeight;
+      fill.style.width = h > 0 ? `${window.scrollY / h * 100}%` : '0%';
+    }, { passive: true });
+    const links = document.querySelectorAll('#tocList a');
+    const sections = [];
+    links.forEach(a => {
+      const el = document.getElementById(a.getAttribute('href').slice(1));
+      if (el) sections.push({ el, a });
+    });
+    const observer = new IntersectionObserver((entries) => {
+      entries.forEach(entry => {
+        if (entry.isIntersecting) {
+          links.forEach(a => a.classList.remove('active'));
+          const hit = sections.find(s => s.el === entry.target);
+          if (hit) hit.a.classList.add('active');
+        }
+      });
+    }, { threshold: 0.08, rootMargin: '-72px 0px -64% 0px' });
+    sections.forEach(s => observer.observe(s.el));
+  </script>
+</body>
+</html>
