@@ -22,6 +22,10 @@
 | shared experts | 1 | 2 | 保留更强通用 full-width path |
 | activation | SwiGLU | SiTU-GLU | 为低精度和极大 MoE 稳定性做约束 |
 
+![Kimi K3 architecture overview from InfraTech](assets/kimi_series/kimi_k3_architecture_infratech.jpg)
+
+图：InfraTech 绘制的 Kimi K3 architecture overview，用一张图串起 hybrid KDA-MLA attention、Attention Residuals、Stable LatentMoE、QB 与系统侧并行/serving 组件。来源：[CalvinXKY/InfraTech](https://github.com/CalvinXKY/InfraTech/blob/main/models/kimi_k_3/kimi_k_3_architecture.jpg)。
+
 ![K3 scaling law and architecture table](assets/kimi_series/kimi_k3_scaling_arch_table_p11.png)
 
 图：Kimi K3 technical report 第 11 页。Figure 7 和 Table 1 给出 K2 到 K3 的 scaling efficiency 与结构差异。
@@ -557,6 +561,7 @@ flowchart LR
 | Kimi K3 Hugging Face | https://huggingface.co/moonshotai/Kimi-K3 | 模型规格、context、架构摘要、使用限制 |
 | Kimi K3 GitHub | https://github.com/MoonshotAI/Kimi-K3 | 技术报告、推理配置、开源入口 |
 | Kimi K3 technical report PDF | https://github.com/MoonshotAI/Kimi-K3/blob/main/k3_tech_report.pdf | 本文 KDA、AttnRes、Stable LatentMoE 的主要公式和系统证据 |
+| InfraTech Kimi K3 architecture | https://github.com/CalvinXKY/InfraTech/blob/main/models/kimi_k_3/kimi_k_3_architecture.jpg | K3 整体架构图与技术模块位置参考 |
 | Kimi Linear GitHub | https://github.com/MoonshotAI/Kimi-Linear | KDA 前置技术、3:1 hybrid、KDA kernel 与 vLLM implementation |
 | Kimi Linear paper | https://huggingface.co/papers/2510.26692 | KDA 与 MLA 混合路线、1M context 性能数据 |
 | FlashKDA | https://github.com/MoonshotAI/FlashKDA | KDA kernel 线索 |
