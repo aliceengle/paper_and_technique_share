@@ -3,8 +3,8 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Kimi 技术报告分享入口</title>
-  <meta name="description" content="Kimi 系列技术时间线与 Kimi K3 核心技术分享页入口">
+  <title>技术报告分享入口</title>
+  <meta name="description" content="Kimi 系列技术时间线、Kimi K3 核心技术与 speculative decoding 报告入口">
   <style>
     :root {
       --bg: #eef3f7;
@@ -196,9 +196,9 @@
 <body>
   <main>
     <header>
-      <div class="eyebrow">Kimi Technique Share Index</div>
-      <h1>Kimi 技术报告分享入口</h1>
-      <p class="lead">从这里进入不同粒度的分享页：一份覆盖 Kimi 系列技术路线，一份聚焦 Kimi K3 的 KDA、Attention Residuals 与 Stable MoE。</p>
+      <div class="eyebrow">Technique Share Index</div>
+      <h1>技术报告分享入口</h1>
+      <p class="lead">从这里进入不同粒度的技术报告：Kimi 系列技术路线、Kimi K3 核心技术，以及 speculative decoding 与 GLM-5.2 选型。</p>
     </header>
 
     <section class="grid" aria-label="分享页列表">
@@ -237,6 +237,24 @@
           <span>内容：时间线、技术总表、推理效率、RL 后训练、Agent 编排、18 张截图</span>
         </div>
       </a>
+      <a class="card" href="html/speculative-decoding-technique-comparison-glm52-260721/">
+        <div>
+          <div class="tag-row">
+            <span class="tag">SpecDecode</span>
+            <span class="tag">GLM-5.2</span>
+            <span class="tag">MTP</span>
+            <span class="tag">DSpark</span>
+          </div>
+          <h2>投机采样解码技术报告</h2>
+          <p>系统梳理 speculative decoding、Medusa、EAGLE、native MTP、FastMTP、DFlash、DSpark 与 GLM-5.2 选型。</p>
+          <span class="open">打开报告页</span>
+        </div>
+        <div class="meta">
+          <span>入口：<code>html/speculative-decoding-technique-comparison-glm52-260721/</code></span>
+          <span>内容：算法演进、技术对比、测试结论、GLM-5.2 选型，含 53 个表格</span>
+        </div>
+      </a>
+
     </section>
 
     <p class="note">发布到静态站点后，可直接访问本目录的 <code>index.html</code> 作为总入口；所有跳转均为相对路径。</p>
