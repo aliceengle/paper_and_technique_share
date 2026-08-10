@@ -196,6 +196,7 @@
 <li class="level-3"><a href="#5-1-tv-和-overlap-的含义">5.1 TV 和 overlap 的含义</a></li>
 <li class="level-2"><a href="#6-技术演进图">6. 技术演进图</a></li>
 <li class="level-2"><a href="#7-主流技术横向对比">7. 主流技术横向对比</a></li>
+<li class="level-3"><a href="#7-1-技术演进时间线">7.1 技术演进时间线</a></li>
 <li class="level-2"><a href="#8-代表技术关键点">8. 代表技术关键点</a></li>
 <li class="level-3"><a href="#8-1-小-draft-model">8.1 小 draft model</a></li>
 <li class="level-3"><a href="#8-2-medusa">8.2 Medusa</a></li>
@@ -872,6 +873,156 @@ $$</p>
 </tbody>
 </table></div>
 <h2 id="7-主流技术横向对比">7. 主流技术横向对比</h2>
+<h3 id="7-1-技术演进时间线">7.1 技术演进时间线</h3>
+<p>下面按公开论文 / 技术报告 / GitHub 首次公开的大致时间排序。时间主要依据 arXiv 编号、论文页和开源仓库记录；团队名按公开资料中的代表团队或项目组织标注，部分新论文仍以论文作者团队 / GitHub 组织为准。</p>
+<div class="mermaid">flowchart LR
+    A["2022-11\nSpeculative Decoding\nGoogle Research\narXiv:2211.17192"] --&gt; B["2023-02\nSpeculative Sampling\nDeepMind\narXiv:2302.01318"]
+    B --&gt; C["2024-01\nMedusa\nMedusa authors / LMSYS ecosystem\narXiv:2401.10774"]
+    C --&gt; D["2024-01\nEAGLE\nSafeAILab\narXiv:2401.15077"]
+    D --&gt; E["2024-04\nTriForce\nCMU / Meta 等\narXiv:2404.11912"]
+    E --&gt; F["2024-06\nEAGLE-2\nSafeAILab\narXiv:2406.16858"]
+    F --&gt; G["2024-12\nnative MTP / NextN\nDeepSeek-AI 等模型团队\nDeepSeek-V3 技术报告"]
+    G --&gt; H["2025-03\nEAGLE-3\nSafeAILab\narXiv:2503.01840"]
+    H --&gt; I["2025-09\nFastMTP\nTencent BAC\narXiv:2509.18362"]
+    I --&gt; J["2026-02\nP-EAGLE\nP-EAGLE 作者团队 / Red Hat AI 生态\narXiv:2602.01469"]
+    J --&gt; K["2026-02\nDFlash\nDFlash 作者团队 / z-lab\narXiv:2602.06036"]
+    K --&gt; L["2026\nDSpark\nDeepSeek-AI / DeepSpec\n本地 DSpark paper"]
+    L --&gt; M["2026-06\nJetSpec\nHao AI Lab 等\narXiv:2606.18394"]
+    M --&gt; N["2026-06\nHyperDFlash\nHyperDFlash 作者团队\narXiv:2606.26744"]
+</div>
+<p>时间线可以粗略分成四个阶段：</p>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>阶段</th>
+<th>时间</th>
+<th>代表方法</th>
+<th>核心变化</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>小 draft 模型阶段</td>
+<td>2022-2023</td>
+<td>Speculative Decoding / Speculative Sampling</td>
+<td>用较小 draft model 先提议 token，target 一次 forward 并行验证。</td>
+</tr>
+<tr>
+<td>多 head / feature drafter 阶段</td>
+<td>2024</td>
+<td>Medusa、EAGLE、EAGLE-2</td>
+<td>从独立小模型转向外挂 head 或 feature-level drafter，并开始优化验证树。</td>
+</tr>
+<tr>
+<td>模型原生与成熟 EAGLE 阶段</td>
+<td>2024-2025</td>
+<td>native MTP / NextN、EAGLE-3、FastMTP</td>
+<td>一方面模型自身带 MTP head，另一方面 EAGLE-3 成为成熟外部 speculator baseline。</td>
+</tr>
+<tr>
+<td>block-parallel / scheduler 阶段</td>
+<td>2026 起</td>
+<td>DFlash、DSpark、P-EAGLE、JetSpec、HyperDFlash</td>
+<td>重点转向降低 draft latency、并行生成 block/tree proposal，并用 confidence / scheduler 减少无效验证。</td>
+</tr>
+</tbody>
+</table></div>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>方法</th>
+<th>提出时间</th>
+<th>代表团队 / 公开归属</th>
+<th>备注</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Speculative Decoding</td>
+<td>2022-11</td>
+<td>Google Research</td>
+<td><code>Fast Inference from Transformers via Speculative Decoding</code>。</td>
+</tr>
+<tr>
+<td>Speculative Sampling</td>
+<td>2023-02</td>
+<td>DeepMind</td>
+<td><code>Accelerating Large Language Model Decoding with Speculative Sampling</code>。</td>
+</tr>
+<tr>
+<td>Medusa</td>
+<td>2024-01</td>
+<td>Medusa authors / LMSYS ecosystem</td>
+<td>多 decoding heads + tree attention。</td>
+</tr>
+<tr>
+<td>EAGLE</td>
+<td>2024-01</td>
+<td>SafeAILab</td>
+<td>feature-level speculative sampling。</td>
+</tr>
+<tr>
+<td>TriForce</td>
+<td>2024-04</td>
+<td>CMU / Meta 等</td>
+<td>长上下文层级 speculative decoding。</td>
+</tr>
+<tr>
+<td>EAGLE-2</td>
+<td>2024-06</td>
+<td>SafeAILab</td>
+<td>动态 draft tree。</td>
+</tr>
+<tr>
+<td>native MTP / NextN</td>
+<td>2024-12 起</td>
+<td>DeepSeek-AI 等模型团队</td>
+<td>以 DeepSeek-V3/GLM/Qwen 等模型原生 MTP/NextN 路线为代表。</td>
+</tr>
+<tr>
+<td>EAGLE-3</td>
+<td>2025-03</td>
+<td>SafeAILab</td>
+<td>多层 feature fusion + direct token prediction。</td>
+</tr>
+<tr>
+<td>FastMTP</td>
+<td>2025-09</td>
+<td>Tencent BAC</td>
+<td>对 native MTP head 做增强微调。</td>
+</tr>
+<tr>
+<td>P-EAGLE</td>
+<td>2026-02</td>
+<td>P-EAGLE 作者团队 / Red Hat AI 生态</td>
+<td>将 EAGLE-3 多 depth draft 并行化。</td>
+</tr>
+<tr>
+<td>DFlash</td>
+<td>2026-02</td>
+<td>DFlash 作者团队 / z-lab</td>
+<td>block diffusion / non-causal block drafter。</td>
+</tr>
+<tr>
+<td>DSpark</td>
+<td>2026</td>
+<td>DeepSeek-AI / DeepSpec</td>
+<td>在 DFlash 式 parallel backbone 上加 sequential head 和 confidence scheduler。</td>
+</tr>
+<tr>
+<td>JetSpec</td>
+<td>2026-06</td>
+<td>Hao AI Lab 等</td>
+<td>parallel tree drafting + Tree-Causal Mask。</td>
+</tr>
+<tr>
+<td>HyperDFlash</td>
+<td>2026-06</td>
+<td>HyperDFlash 作者团队</td>
+<td>针对 Hyper-Connection 架构的 block speculative decoding。</td>
+</tr>
+</tbody>
+</table></div>
 <div class="table-wrap"><table>
 <thead>
 <tr>

@@ -375,6 +375,53 @@ flowchart TD
 
 ## 7. 主流技术横向对比
 
+### 7.1 技术演进时间线
+
+下面按公开论文 / 技术报告 / GitHub 首次公开的大致时间排序。时间主要依据 arXiv 编号、论文页和开源仓库记录；团队名按公开资料中的代表团队或项目组织标注，部分新论文仍以论文作者团队 / GitHub 组织为准。
+
+```mermaid
+flowchart LR
+    A["2022-11\nSpeculative Decoding\nGoogle Research\narXiv:2211.17192"] --> B["2023-02\nSpeculative Sampling\nDeepMind\narXiv:2302.01318"]
+    B --> C["2024-01\nMedusa\nMedusa authors / LMSYS ecosystem\narXiv:2401.10774"]
+    C --> D["2024-01\nEAGLE\nSafeAILab\narXiv:2401.15077"]
+    D --> E["2024-04\nTriForce\nCMU / Meta 等\narXiv:2404.11912"]
+    E --> F["2024-06\nEAGLE-2\nSafeAILab\narXiv:2406.16858"]
+    F --> G["2024-12\nnative MTP / NextN\nDeepSeek-AI 等模型团队\nDeepSeek-V3 技术报告"]
+    G --> H["2025-03\nEAGLE-3\nSafeAILab\narXiv:2503.01840"]
+    H --> I["2025-09\nFastMTP\nTencent BAC\narXiv:2509.18362"]
+    I --> J["2026-02\nP-EAGLE\nP-EAGLE 作者团队 / Red Hat AI 生态\narXiv:2602.01469"]
+    J --> K["2026-02\nDFlash\nDFlash 作者团队 / z-lab\narXiv:2602.06036"]
+    K --> L["2026\nDSpark\nDeepSeek-AI / DeepSpec\n本地 DSpark paper"]
+    L --> M["2026-06\nJetSpec\nHao AI Lab 等\narXiv:2606.18394"]
+    M --> N["2026-06\nHyperDFlash\nHyperDFlash 作者团队\narXiv:2606.26744"]
+```
+
+时间线可以粗略分成四个阶段：
+
+| 阶段 | 时间 | 代表方法 | 核心变化 |
+|---|---|---|---|
+| 小 draft 模型阶段 | 2022-2023 | Speculative Decoding / Speculative Sampling | 用较小 draft model 先提议 token，target 一次 forward 并行验证。 |
+| 多 head / feature drafter 阶段 | 2024 | Medusa、EAGLE、EAGLE-2 | 从独立小模型转向外挂 head 或 feature-level drafter，并开始优化验证树。 |
+| 模型原生与成熟 EAGLE 阶段 | 2024-2025 | native MTP / NextN、EAGLE-3、FastMTP | 一方面模型自身带 MTP head，另一方面 EAGLE-3 成为成熟外部 speculator baseline。 |
+| block-parallel / scheduler 阶段 | 2026 起 | DFlash、DSpark、P-EAGLE、JetSpec、HyperDFlash | 重点转向降低 draft latency、并行生成 block/tree proposal，并用 confidence / scheduler 减少无效验证。 |
+
+| 方法 | 提出时间 | 代表团队 / 公开归属 | 备注 |
+|---|---|---|---|
+| Speculative Decoding | 2022-11 | Google Research | `Fast Inference from Transformers via Speculative Decoding`。 |
+| Speculative Sampling | 2023-02 | DeepMind | `Accelerating Large Language Model Decoding with Speculative Sampling`。 |
+| Medusa | 2024-01 | Medusa authors / LMSYS ecosystem | 多 decoding heads + tree attention。 |
+| EAGLE | 2024-01 | SafeAILab | feature-level speculative sampling。 |
+| TriForce | 2024-04 | CMU / Meta 等 | 长上下文层级 speculative decoding。 |
+| EAGLE-2 | 2024-06 | SafeAILab | 动态 draft tree。 |
+| native MTP / NextN | 2024-12 起 | DeepSeek-AI 等模型团队 | 以 DeepSeek-V3/GLM/Qwen 等模型原生 MTP/NextN 路线为代表。 |
+| EAGLE-3 | 2025-03 | SafeAILab | 多层 feature fusion + direct token prediction。 |
+| FastMTP | 2025-09 | Tencent BAC | 对 native MTP head 做增强微调。 |
+| P-EAGLE | 2026-02 | P-EAGLE 作者团队 / Red Hat AI 生态 | 将 EAGLE-3 多 depth draft 并行化。 |
+| DFlash | 2026-02 | DFlash 作者团队 / z-lab | block diffusion / non-causal block drafter。 |
+| DSpark | 2026 | DeepSeek-AI / DeepSpec | 在 DFlash 式 parallel backbone 上加 sequential head 和 confidence scheduler。 |
+| JetSpec | 2026-06 | Hao AI Lab 等 | parallel tree drafting + Tree-Causal Mask。 |
+| HyperDFlash | 2026-06 | HyperDFlash 作者团队 | 针对 Hyper-Connection 架构的 block speculative decoding。 |
+
 | 技术 | 关键创新 | 重点机制或公式 | 优点 | 主要限制 |
 |---|---|---|---|---|
 | 小 draft model | 用小模型先生成 $K$ 个 token，target 批量验证。 | 接受概率 $\min(1,p/q)$ 和 residual sampling。 | 原理最清晰，分布无损证明完整。 | 小模型仍自回归；tokenizer 和分布偏移会拉低接受率。 |
