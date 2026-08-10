@@ -239,6 +239,13 @@ def render_html(title: str, article: str, toc_html: str) -> str:
       border: 1px solid var(--border);
       border-radius: 10px;
       overflow-x: auto;
+      text-align: center;
+    }}
+    .mermaid svg {{
+      display: block;
+      max-width: 100%;
+      height: auto;
+      margin: 0 auto;
     }}
     .toc {{
       position: sticky;
