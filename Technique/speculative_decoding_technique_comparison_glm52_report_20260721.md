@@ -1069,7 +1069,7 @@ $$
 B_k(x_{k-1},\cdot)=E(x_{k-1})W_2
 $$
 
-其中 $E(x_{k-1})$ 是上一个 token 的低秩 embedding，$W_2$ 把它投影成 vocab 维度的 logits bias。这样第 $k$ 个位置的最终 logits 不是只看并行 backbone 的 $U_k$，而是：
+这里的 $E(x_{k-1})$ 和 9.4 节里的 $W_1[x_{k-1}]$ 是同一个东西，表示从低秩 embedding 表 $W_1$ 中查出上一 token 对应的向量。$W_2$ 把它投影成 vocab 维度的 logits bias。这样第 $k$ 个位置的最终 logits 不是只看并行 backbone 的 $U_k$，而是：
 
 $$
 \text{logits}_k = U_k + B_k(x_{k-1},\cdot)
@@ -1107,6 +1107,104 @@ $$
 
 论文和本地配置常用 $r=256$。这让 sequential loop 非常轻，draft latency 仍主要由 parallel backbone 决定。
 
+#### 9.4.1 9.3.1 和 9.4 的 Markov 公式为什么看起来不一样，256 是什么
+
+9.3.1 里的公式：
+
+$$
+B_k(x_{k-1},\cdot)=E(x_{k-1})W_2
+$$
+
+和 9.4 里的公式：
+
+$$
+B(x_{k-1},\cdot)=W_1[x_{k-1}]W_2
+$$
+
+表达的是同一个 Markov head，只是记号不同：
+
+| 记号 | 含义 |
+|---|---|
+| $E(x_{k-1})$ | 上一个 token 的低秩 embedding。 |
+| $W_1[x_{k-1}]$ | 从矩阵 $W_1$ 中按 token id 查表得到的一行。 |
+| $W_2$ | 把低秩向量投影回 vocab 维度的矩阵。 |
+| $B(x_{k-1},\cdot)$ | 给整个词表每个候选 token 加的 logits bias。 |
+
+因此：
+
+$$
+E(x_{k-1}) \equiv W_1[x_{k-1}]
+$$
+
+完整的一阶 Markov 转移如果直接建模，需要一个 $|\mathcal{V}|\times|\mathcal{V}|$ 的矩阵：
+
+$$
+T[x_{k-1},v]
+$$
+
+它表示“上一个 token 是 $x_{k-1}$ 时，下一个候选 token $v$ 应该加多少 bias”。但是词表很大，GLM/Qwen 这类模型的 vocab 通常是十几万量级，直接存完整矩阵参数量会非常高：
+
+$$
+|\mathcal{V}|^2
+$$
+
+DSpark 用低秩分解替代完整转移矩阵：
+
+$$
+T \approx W_1W_2
+$$
+
+其中：
+
+$$
+W_1\in \mathbb{R}^{|\mathcal{V}|\times r},
+\quad
+W_2\in \mathbb{R}^{r\times|\mathcal{V}|}
+$$
+
+这里的 $r$ 就是 `markov_rank`。本仓库 GLM-5.2 当前配置里：
+
+```python
+markov_head_type = "vanilla"
+markov_rank = 256
+```
+
+所以 256 的意思是：**每个 token 先被映射成一个 256 维的 Markov latent 向量，再从 256 维投影回整个 vocab 的 logits bias**。它不是 256 个 layer，也不是 block size，而是低秩转移矩阵的中间维度。
+
+参数量从完整矩阵的：
+
+$$
+|\mathcal{V}|^2
+$$
+
+降为：
+
+$$
+|\mathcal{V}|r+r|\mathcal{V}|=2|\mathcal{V}|r
+$$
+
+当 $r=256$ 时，Markov head 只能表达一个 rank 不超过 256 的 token 转移 bias。这个容量比完整转移矩阵小很多，但计算非常轻，适合在 block 内每个位置顺序展开。
+
+从代码看，`VanillaMarkov` 正是这个结构：
+
+| 代码参数 | 数学含义 |
+|---|---|
+| `markov_w1 = nn.Embedding(vocab_size, markov_rank)` | $W_1\in\mathbb{R}^{|\mathcal{V}|\times r}$ |
+| `markov_w2 = nn.Linear(markov_rank, vocab_size, bias=False)` | $W_2\in\mathbb{R}^{r\times|\mathcal{V}|}$ |
+| `markov_rank=256` | $r=256$ |
+| `markov_head_type=vanilla` | 只使用上一 token 查表，不额外使用 gate 或 RNN 状态。 |
+
+所以第 $k$ 个位置的实际计算可以写成：
+
+$$
+\text{logits}_k(v)
+=
+U_k(v)+
+\left(W_1[x_{k-1}]W_2\right)_v
+$$
+
+这就是“在并行 backbone 的 base logits 上，叠加一个由上一 token 决定的低秩 Markov bias”。
+
 ### 9.5 RNN head
 
 RNN head 比 Markov head 更强，可以记住 block 内更长历史。令状态 $s_k$ 累积前缀，输入为：
@@ -1126,7 +1224,43 @@ $$
 B_k(x_{<k},\cdot)=W_2^\top\tanh(W_oz_k)
 $$
 
-本仓库 GLM-5.2 当前配置主要使用 `markov_head_type=vanilla` 和 `markov_rank=256`。
+这里的 $r$ 仍然由 `markov_rank` 控制，只是含义从 vanilla Markov 的“低秩转移中间维度”，扩展成 RNN head 的“递推状态维度”和“输出 bias 的低秩维度”。本仓库代码中的 RNN head 会把：
+
+$$
+[s_{k-1};W_1[x_{k-1}];h_k]
+$$
+
+拼接后送入一个小的 joint projection，生成 gate、candidate 和 output，再把 output 投影成 vocab bias。对应代码里输入维度是：
+
+$$
+2r+d_{\text{draft}}
+$$
+
+输出维度是：
+
+$$
+3r
+$$
+
+其中 $d_{\text{draft}}$ 是 draft hidden size。
+
+但本仓库 GLM-5.2 当前配置主要使用：
+
+```python
+markov_head_type = "vanilla"
+markov_rank = 256
+```
+
+这表示当前并没有启用 RNN head，而是启用 9.4 的 vanilla Markov head。也就是说，GLM-5.2 当前 DSpark 配置只让第 $k$ 个 draft token 的 bias 依赖上一个 token $x_{k-1}$，不维护跨多个位置的 RNN 状态 $s_k$。
+
+| 参数 | 当前值 | 代表含义 |
+|---|---:|---|
+| `markov_head_type` | `vanilla` | 使用最简单的一阶 Markov bias。 |
+| `markov_rank` | `256` | Markov 低秩中间维度 $r=256$。 |
+| `markov_rank=0` | 未用于当前 DSpark GLM-5.2 配置 | 表示不启用 Markov/RNN sequential head，更接近 DFlash 式并行 block drafter。 |
+| `markov_head_type=rnn` | 当前未启用 | 会把 $r=256$ 同时作为 RNN 状态维度和低秩 bias 维度。 |
+
+因此，`markov_rank=256` 可以理解为 DSpark 在“质量”和“draft latency”之间的折中：$r$ 越大，Markov/RNN head 表达能力越强，但每个 draft 位置的顺序修正计算和参数量也越大；$r$ 越小，head 越轻，但补足 block 内因果依赖的能力越弱。
 
 ### 9.6 Confidence head 与接受率标签
 
@@ -1143,6 +1277,68 @@ c_k^*=1-\frac{1}{2}\|p_k^d-p_k^t\|_1
 $$
 
 这正好对应两个分布的重叠面积，也就是单步接受概率的解析代理。
+
+#### 9.6.1 Confidence head 公式解释，以及为什么需要它
+
+Confidence head 的输出不是下一个 token 分布，而是“这个 draft 位置大概率会不会被 target 接受”的估计值。公式：
+
+$$
+c_k=\sigma(w^\top[h_k;W_1[x_{k-1}]])
+$$
+
+可以拆成下面几部分：
+
+| 符号 | 含义 |
+|---|---|
+| $h_k$ | draft backbone 在第 $k$ 个 proposal 位置的 hidden state。 |
+| $x_{k-1}$ | 第 $k$ 个 draft token 前面的 token；推理时是已采样出的上一个 draft token，第 1 位则是 anchor token。 |
+| $W_1[x_{k-1}]$ | Markov head 中上一 token 的低秩 embedding。只有 `confidence_head_with_markov=True` 时才拼进去。 |
+| $[h_k;W_1[x_{k-1}]]$ | confidence head 的输入特征。 |
+| $w^\top(\cdot)$ | 一个线性预测器，本仓库代码中是 `AcceptRatePredictor(input_dim) -> Linear(input_dim, 1)`。 |
+| $\sigma(\cdot)$ | sigmoid，把 logit 映射到 $[0,1]$。 |
+| $c_k$ | 第 $k$ 个位置的单步接受概率估计。 |
+
+本仓库 GLM-5.2 / Qwen3 DSpark 配置里通常有：
+
+```python
+confidence_head_alpha = 1.0
+confidence_head_with_markov = True
+```
+
+这表示训练时启用 confidence loss，并且 confidence head 的输入不只包含 $h_k$，还会拼接 Markov embedding $W_1[x_{k-1}]$。
+
+训练标签来自 draft 分布和 target 分布的重叠面积：
+
+$$
+c_k^*
+=
+1-\frac{1}{2}\|p_k^d-p_k^t\|_1
+=
+\sum_{v\in\mathcal{V}}\min(p_k^d(v),p_k^t(v))
+$$
+
+其中 $p_k^d$ 是 draft 在位置 $k$ 的分布，$p_k^t$ 是 target 对同一前缀、同一位置给出的分布。这个值越接近 1，说明 draft 和 target 分布越接近，draft token 越容易被 target 接受；越接近 0，说明分布差异很大，继续验证这个 suffix 的收益低。
+
+训练时使用 BCE：
+
+$$
+\mathcal{L}_{conf}
+=
+\operatorname{BCEWithLogits}(\hat{c}_k,c_k^*)
+$$
+
+这里 $\hat{c}_k$ 是 confidence head 输出的 logit，$c_k^*$ 是上面的软标签。它不是人工标注，也不是只看 sampled token 是否恰好被接受，而是直接从 draft / target 两个完整分布计算出的解析标签。
+
+为什么需要 confidence head，核心原因是：**proposal block 越靠后，接受概率通常越低；如果无脑把整个 block 都交给 target 验证，会浪费 target batch 容量。**
+
+| 没有 confidence head | 有 confidence head |
+|---|---|
+| 每轮都验证固定长度 $\gamma$。 | 每轮可以估计哪些 prefix 值得验证。 |
+| 低质量 suffix 也占用 target batch。 | 低置信 suffix 可以被截断。 |
+| 离线 accepted length 可能还行，线上高并发 TPOT 不一定好。 | 可以服务于 prefix scheduler，按吞吐目标动态控制验证长度。 |
+| 无法区分“这个请求当前好猜”还是“这个请求当前很难猜”。 | 对每个请求、每个位置给出接受概率估计。 |
+
+因此 confidence head 本身不直接生成 token，它的作用是给 scheduler 提供“验证多少 draft token 才划算”的信号。
 
 ### 9.7 硬件感知 prefix scheduler
 
@@ -1169,6 +1365,102 @@ $$
 $$
 
 直观上，低负载时可以验证更长 prefix；高并发时应截掉低 survival suffix，把 target batch 容量留给更有价值的 token。
+
+#### 9.7.1 为什么需要 prefix scheduler，是否需要训练，推理时怎么做
+
+prefix scheduler 解决的是服务系统里的验证长度选择问题。draft 模型一次可能生成 $\gamma$ 个 token，但 target 并不是免费验证这些 token。验证长度越长，target 的有效 batch token 数越大；如果后缀接受率很低，这些验证 token 大概率不会被提交，只会增加 latency 和显存/算力压力。
+
+所以 scheduler 的目标不是“每个请求都尽量验证最长”，而是：
+
+$$
+\text{在当前负载和硬件吞吐曲线下，选择最划算的验证 prefix 长度。}
+$$
+
+对单个请求 $r$，confidence head 给出逐位置单步接受概率：
+
+$$
+c_{r,1},c_{r,2},\ldots,c_{r,\gamma}
+$$
+
+如果要接受到第 $j$ 个 draft token，前面所有 token 都必须连续接受，因此 prefix survival probability 是连乘：
+
+$$
+a_{r,j}
+=
+\Pr(\text{prefix }1..j\text{ 全部接受})
+\approx
+\prod_{i=1}^{j}c_{r,i}
+$$
+
+如果 scheduler 为请求 $r$ 选择验证长度 $\ell_r$，那么该请求期望贡献的提交 token 数近似是：
+
+$$
+1+\sum_{j=1}^{\ell_r}a_{r,j}
+$$
+
+这里的 $1$ 是 target bonus token / target 自身至少能前进的一步，后面的求和是 draft prefix 的期望接受长度。
+
+prefix scheduler 本身通常 **不需要训练**。需要训练的是 confidence head，因为它要学会预测 $c_{r,j}$。scheduler 是推理时的决策算法，输入是：
+
+| 输入 | 来源 |
+|---|---|
+| 每个请求的 confidence $c_{r,j}$ | confidence head 在线预测。 |
+| 当前活跃请求数 $R$ | serving engine runtime 状态。 |
+| 每个请求最大 proposal 长度 $\gamma$ | draft 配置。 |
+| 硬件吞吐曲线 $SPS(B)$ | 离线 profiling 或线上滑动统计。 |
+| batch token 预算 / latency 约束 | 服务策略配置。 |
+
+推理时可以抽象成下面流程：
+
+```mermaid
+flowchart TD
+    A[每个请求生成 draft block] --> B[confidence head 输出 c_rj]
+    B --> C[计算 prefix survival a_rj]
+    C --> D[枚举或贪心选择每个请求验证长度 l_r]
+    D --> E[得到 target verify batch size B]
+    E --> F[查 SPS（B）或代价模型]
+    F --> G[选择最大化期望吞吐的 l_r 组合]
+    G --> H[target 只验证被选中的 prefix]
+```
+
+论文公式：
+
+$$
+\Theta=\tau_{\text{batch}}\cdot SPS(B)
+$$
+
+里面：
+
+| 符号 | 含义 |
+|---|---|
+| $B=\sum_r(1+\ell_r)$ | 本轮 target verify 的 token 数。每个请求有 anchor/bonus 相关位置，再加选中的 draft prefix。 |
+| $\tau_{\text{batch}}$ | 本轮期望提交 token 数。 |
+| $SPS(B)$ | target engine 在 verify batch size 为 $B$ 时的吞吐，通常是 tokens/s 或 steps/s 的经验曲线。 |
+| $\Theta$ | 期望有效吞吐，scheduler 要最大化它。 |
+
+SPS 在推理时一般不是临时现算，而是提前准备或在线维护：
+
+| 实现方式 | 做法 | 适用场景 |
+|---|---|---|
+| 离线 profiling 表 | 预先测不同 $B$ 下 target verify 的 tokens/s，推理时查表或插值。 | 生产更稳定，推荐。 |
+| 在线滑动统计 | serving 过程中统计最近窗口的 verify batch size 和耗时，动态更新 $SPS(B)$。 | 负载变化大、硬件状态波动大。 |
+| 简化阈值策略 | 不显式用完整 $SPS(B)$，只用 confidence threshold 截断 prefix。 | 本地 eval / smoke test 更容易落地。 |
+
+本仓库当前 DeepSpec eval 里更接近第三种简化策略：`confidence_threshold` 大于 0 时，从第一个 `sigmoid(confidence_logit) < threshold` 的位置截断；如果 threshold 为 0，则验证完整 block。这能验证 confidence head 是否有用，但还不是完整的硬件感知 prefix scheduler。
+
+为了在推理时真正使用 prefix scheduler，需要注意：
+
+| 注意点 | 原因 |
+|---|---|
+| confidence 必须校准 | 如果 $c_{r,j}$ 系统性偏高，会验证太长 suffix；偏低会错过可接受 token。 |
+| 必须使用 prefix 连乘，而不是只看单点 $c_{r,j}$ | 第 $j$ 位能提交的前提是前面 $1..j-1$ 全部接受。 |
+| scheduler 只能选择连续 prefix | target 接受规则是连续前缀接受，不能跳过中间低置信 token 只验证后面 token。 |
+| SPS 曲线要按真实线上配置测 | TP、PP、batching、KV cache、FP8/BF16、上下文长度都会改变 $SPS(B)$。 |
+| verify batch 形状要和引擎兼容 | 不同请求不同 $\ell_r$ 需要 padding、packing 或 ragged batch 支持。 |
+| 截断不能破坏 speculative sampling 正确性 | 被选中的 prefix 仍必须由 target 正常验证；未验证的 suffix 直接丢弃，不能直接提交。 |
+| 长上下文要单独调 | 长上下文下 target verify 成本、KV cache 压力和 confidence 校准都会变化。 |
+
+一句话说：**confidence head 负责预测“每个位置值不值得赌”，prefix scheduler 负责在当前硬件吞吐曲线下决定“每个请求赌到第几个位置”。**
 
 ### 9.8 训练目标
 
@@ -1211,6 +1503,109 @@ $$
 $$
 
 DSpark paper 默认权重为 $\alpha_{ce}=0.1$、$\alpha_{tv}=0.9$、$\alpha_{conf}=1.0$。本地 DeepSpec 代码中对应 `ce_loss_alpha=0.1`、`l1_loss_alpha=0.9`、`confidence_head_alpha=1.0`，其中 L1 项就是 TV 距离的同阶实现。
+
+#### 9.8.1 总损失每一项的含义，以及为什么这样设计
+
+DSpark 的训练目标不是单纯“让 draft 猜中训练数据里的下一个 token”，而是同时服务三个目标：
+
+| 目标 | 对应损失 | 作用 |
+|---|---|---|
+| token 级别要会生成正确答案 | $\mathcal{L}_{ce}$ | 让 draft 对真实后续 token 给高概率。 |
+| 分布级别要像 target | $\mathcal{L}_{tv}$ / L1 | 让 draft 分布接近 target 分布，提高 speculative sampling 接受率。 |
+| 系统级别要知道验证多长 | $\mathcal{L}_{conf}$ | 让 confidence head 预测每个位置的接受概率，供 prefix scheduler 使用。 |
+
+第一项是交叉熵：
+
+$$
+\mathcal{L}_{ce}
+=
+-\sum_{k=1}^{\gamma}w_k\log p_k^d(x_k^*)
+$$
+
+其中 $x_k^*$ 是训练样本中第 $k$ 个真实后续 token，$p_k^d$ 是 DSpark draft 在第 $k$ 个位置的预测分布。它的作用是最直接的 teacher forcing：真实 token 概率越低，惩罚越大。
+
+但只用 CE 不够。原因是 speculative decoding 的接受率不只取决于 argmax 或真实 token 的概率，还取决于 draft 分布和 target 分布的整体重叠。两个分布即使都把真实 token 排第一，也可能在尾部分布、次高概率 token 上差异很大；sampling 场景下这种差异会直接降低接受概率。
+
+第二项是分布匹配项：
+
+$$
+\mathcal{L}_{tv}
+=
+\sum_{k=1}^{\gamma}w_k\|p_k^d-p_k^t\|_1
+$$
+
+其中 $p_k^t$ 是 target model 在同一上下文、同一 draft 位置的分布。L1 距离和 TV 距离只差一个 $\frac{1}{2}$：
+
+$$
+TV(p_k^d,p_k^t)
+=
+\frac{1}{2}\|p_k^d-p_k^t\|_1
+$$
+
+而 speculative sampling 中单步接受概率和两个分布的重叠面积直接相关：
+
+$$
+\operatorname{overlap}(p_k^d,p_k^t)
+=
+1-TV(p_k^d,p_k^t)
+=
+1-\frac{1}{2}\|p_k^d-p_k^t\|_1
+$$
+
+所以优化 L1/TV，本质是在直接优化“draft token 被 target 接受”的概率代理。这也是 DSpark 默认 $\alpha_{tv}=0.9$ 高于 $\alpha_{ce}=0.1$ 的原因：对于投机解码，draft 像不像 target 分布，比单纯拟合数据 token 更关键。
+
+第三项是 confidence loss：
+
+$$
+\mathcal{L}_{conf}
+=
+-\sum_{k=1}^{\gamma}w_k
+\left[c_k^*\log c_k+(1-c_k^*)\log(1-c_k)\right]
+$$
+
+其中：
+
+| 符号 | 含义 |
+|---|---|
+| $c_k$ | confidence head 预测的第 $k$ 位接受概率。 |
+| $c_k^*$ | 由 draft/target 分布重叠面积计算出的软标签。 |
+| $\mathcal{L}_{conf}$ | 用 BCE 让预测接受率校准到真实分布重叠。 |
+
+这项损失不直接提升 draft logits 的质量，而是提升调度质量。没有它，系统只能固定验证 $\gamma$ 个 token，或者用手工阈值；有了它，prefix scheduler 才能根据每个请求、每个位置的 $c_k$ 判断“验证到哪里最划算”。
+
+位置权重 $w_k$ 的设计也很重要：
+
+$$
+w_k=\exp\left(-\frac{k-1}{\gamma}\right)
+$$
+
+它让前面位置权重更大、后面位置权重更小。原因是 speculative decoding 的接受是连续前缀接受：如果第 1 个 token 被拒绝，后面第 2 到第 $\gamma$ 个 token 即使预测对了也不能提交。因此越靠前的位置对实际 accepted length 影响越大。
+
+整体来看，总损失：
+
+$$
+\mathcal{L}
+=
+\alpha_{ce}\mathcal{L}_{ce}
++\alpha_{tv}\mathcal{L}_{tv}
++\alpha_{conf}\mathcal{L}_{conf}
+$$
+
+对应的是三层优化：
+
+```mermaid
+flowchart TD
+    A[CE: 学会真实后续 token] --> D[proposal token 更合理]
+    B[TV/L1: 对齐 target 分布] --> E[target 接受率更高]
+    C[Confidence BCE: 校准接受概率] --> F[prefix scheduler 验证长度更合理]
+    D --> G[更高 accepted length]
+    E --> G
+    F --> H[更少无效 target verify token]
+    G --> I[端到端 TPOT/throughput 改善]
+    H --> I
+```
+
+所以 DSpark 不把训练目标只写成一个 CE，是因为它面对的不是普通语言模型训练问题，而是投机解码服务问题：**draft 要生成得像 target，分布要能被 target 接受，还要能预测自己哪些位置值得验证。**
 
 ## 10. 公开测试对比
 
