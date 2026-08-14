@@ -214,29 +214,39 @@
 <li class="level-3"><a href="#9-6-confidence-head-与接受率标签">9.6 Confidence head 与接受率标签</a></li>
 <li class="level-3"><a href="#9-7-硬件感知-prefix-scheduler">9.7 硬件感知 prefix scheduler</a></li>
 <li class="level-3"><a href="#9-8-训练目标">9.8 训练目标</a></li>
-<li class="level-2"><a href="#10-公开测试对比">10. 公开测试对比</a></li>
-<li class="level-3"><a href="#10-1-公开资料中有直接横向对比的结果">10.1 公开资料中有直接横向对比的结果</a></li>
-<li class="level-3"><a href="#10-2-dspark-paper-的同框-accepted-length-表">10.2 DSpark paper 的同框 accepted length 表</a></li>
-<li class="level-3"><a href="#10-3-github-huggingface-模型卡侧对比">10.3 GitHub / HuggingFace 模型卡侧对比</a></li>
-<li class="level-3"><a href="#10-4-本仓库-glm-5-2-已有实测作为对照">10.4 本仓库 GLM-5.2 已有实测作为对照</a></li>
-<li class="level-2"><a href="#11-对比结论">11. 对比结论</a></li>
-<li class="level-3"><a href="#11-1-按技术效果排序">11.1 按技术效果排序</a></li>
-<li class="level-3"><a href="#11-2-为什么公开结果不能简单相加">11.2 为什么公开结果不能简单相加</a></li>
-<li class="level-3"><a href="#11-3-总体判断">11.3 总体判断</a></li>
-<li class="level-2"><a href="#12-glm-5-2-上排除自身-mtp-后优先使用哪种技术">12. GLM-5.2 上排除自身 MTP 后优先使用哪种技术</a></li>
-<li class="level-3"><a href="#12-1-结论">12.1 结论</a></li>
-<li class="level-3"><a href="#12-2-为什么不是直接选-dflash">12.2 为什么不是直接选 DFlash</a></li>
-<li class="level-3"><a href="#12-3-为什么不是直接选-p-eagle">12.3 为什么不是直接选 P-EAGLE</a></li>
-<li class="level-3"><a href="#12-4-为什么-dspark-是中期首选">12.4 为什么 DSpark 是中期首选</a></li>
-<li class="level-3"><a href="#12-5-但是-dspark-不能直接上线">12.5 但是 DSpark 不能直接上线</a></li>
-<li class="level-3"><a href="#12-6-推荐验证路线">12.6 推荐验证路线</a></li>
-<li class="level-2"><a href="#13-实施风险和工程注意点">13. 实施风险和工程注意点</a></li>
-<li class="level-2"><a href="#14-参考资料">14. 参考资料</a></li>
+<li class="level-2"><a href="#10-angelspec-dfly-d-cut">10. AngelSpec：DFly + D-cut</a></li>
+<li class="level-3"><a href="#10-1-angelspec-的整体分层">10.1 AngelSpec 的整体分层</a></li>
+<li class="level-3"><a href="#10-2-dfly-与-dflash-dflare-dspark-的关系">10.2 DFly 与 DFlash、DFlare、DSpark 的关系</a></li>
+<li class="level-3"><a href="#10-3-hybrid-target-conditioning-backbone">10.3 Hybrid target-conditioning backbone</a></li>
+<li class="level-3"><a href="#10-4-predecessor-conditioned-hidden-correction-head">10.4 Predecessor-conditioned hidden-correction head</a></li>
+<li class="level-3"><a href="#10-5-dfly-的训练目标和数据策略">10.5 DFly 的训练目标和数据策略</a></li>
+<li class="level-3"><a href="#10-6-d-cut-跨请求的动态验证预算">10.6 D-cut：跨请求的动态验证预算</a></li>
+<li class="level-3"><a href="#10-7-公开实验结果">10.7 公开实验结果</a></li>
+<li class="level-3"><a href="#10-8-对-glm-5-2-的意义与当前开源边界">10.8 对 GLM-5.2 的意义与当前开源边界</a></li>
+<li class="level-2"><a href="#11-公开测试对比">11. 公开测试对比</a></li>
+<li class="level-3"><a href="#11-1-公开资料中有直接横向对比的结果">11.1 公开资料中有直接横向对比的结果</a></li>
+<li class="level-3"><a href="#11-2-dspark-paper-的同框-accepted-length-表">11.2 DSpark paper 的同框 accepted length 表</a></li>
+<li class="level-3"><a href="#11-3-github-huggingface-模型卡侧对比">11.3 GitHub / HuggingFace 模型卡侧对比</a></li>
+<li class="level-3"><a href="#11-4-本仓库-glm-5-2-已有实测作为对照">11.4 本仓库 GLM-5.2 已有实测作为对照</a></li>
+<li class="level-2"><a href="#12-对比结论">12. 对比结论</a></li>
+<li class="level-3"><a href="#12-1-按技术效果排序">12.1 按技术效果排序</a></li>
+<li class="level-3"><a href="#12-2-为什么公开结果不能简单相加">12.2 为什么公开结果不能简单相加</a></li>
+<li class="level-3"><a href="#12-3-总体判断">12.3 总体判断</a></li>
+<li class="level-2"><a href="#13-glm-5-2-上排除自身-mtp-后优先使用哪种技术">13. GLM-5.2 上排除自身 MTP 后优先使用哪种技术</a></li>
+<li class="level-3"><a href="#13-1-结论">13.1 结论</a></li>
+<li class="level-3"><a href="#13-2-为什么不是直接选-dflash">13.2 为什么不是直接选 DFlash</a></li>
+<li class="level-3"><a href="#13-3-为什么不是直接选-p-eagle">13.3 为什么不是直接选 P-EAGLE</a></li>
+<li class="level-3"><a href="#13-4-为什么-dspark-是中期首选">13.4 为什么 DSpark 是中期首选</a></li>
+<li class="level-3"><a href="#13-5-但是-dspark-不能直接上线">13.5 但是 DSpark 不能直接上线</a></li>
+<li class="level-3"><a href="#13-6-推荐验证路线">13.6 推荐验证路线</a></li>
+<li class="level-2"><a href="#14-实施风险和工程注意点">14. 实施风险和工程注意点</a></li>
+<li class="level-2"><a href="#15-参考资料">15. 参考资料</a></li>
       </ul>
     </nav>
     <article class="article-body">
       
 <p>记录时间：2026-07-21 CST</p>
+<p>补充更新：2026-08-12 CST（新增 AngelSpec、DFly 与 D-cut，依据 arXiv:2607.25852v2）</p>
 <h2 id="1-结论摘要">1. 结论摘要</h2>
 <p>这份文档不是项目进展说明，而是对 speculative sampling / speculative decoding 技术的系统梳理。项目内的 GLM-5.2 和 DeepSpec/DSpark 数据只作为“先进模型上的实测案例”使用。</p>
 <div class="table-wrap"><table>
@@ -257,7 +267,7 @@
 </tr>
 <tr>
 <td>当前主流技术路线</td>
-<td>小 draft model、prompt lookup / n-gram / suffix、Medusa、EAGLE 系列、native MTP / FastMTP、DFlash、DSpark、P-EAGLE、JetSpec、TriForce 等。</td>
+<td>小 draft model、prompt lookup / n-gram / suffix、Medusa、EAGLE 系列、native MTP / FastMTP、DFlash、DSpark、DFly + D-cut、P-EAGLE、JetSpec、TriForce 等。</td>
 </tr>
 <tr>
 <td>没有 native MTP 时的稳妥 baseline</td>
@@ -265,7 +275,7 @@
 </tr>
 <tr>
 <td>论文上限最高的方向</td>
-<td>DSpark、DFlash、JetSpec 这类 block-parallel / causal-parallel drafter。它们试图降低 draft latency，并扩大每轮可验证 token 数。</td>
+<td>DFly、DSpark、DFlash、JetSpec 这类 block-parallel / causal-parallel drafter，以及 D-cut 一类动态验证调度。它们同时降低 draft latency、提高 accepted length，并减少无效 target verification。</td>
 </tr>
 <tr>
 <td>GLM-5.2 当前最好方案</td>
@@ -275,11 +285,15 @@
 <td>DSpark 对 GLM-5.2 的定位</td>
 <td>不是当前默认上线方案，但仍是最值得继续攻关的高上限路线。下一步应按 speculators/vLLM 原生格式重训，并用同一批 GLM-5.2 workload 与 native MTP 做 TPOT / throughput A/B。</td>
 </tr>
+<tr>
+<td>DFly + D-cut 对 GLM-5.2 的定位</td>
+<td>新增的高优先级研究候选。DFly 在 Qwen3-8B 同框实验中略高于 DSpark，并在 Hy3-A21B 上显著高于 DFlash；但当前没有 GLM-5.2 checkpoint、适配结果和 D-cut runtime 闭环，因此暂不能替代已有 DSpark 攻关主线。</td>
+</tr>
 </tbody>
 </table></div>
 <p>一句话判断：</p>
 <blockquote>
-<p>对 GLM-5.2 这类已经带 NextN/MTP 的先进 MoE/FP8 模型，当前最佳生产路线是 native MTP；从长期技术上限看，DSpark/JetSpec 代表的“并行 proposal + 更强因果建模 + 动态验证调度”更值得研究，但必须用 GLM-5.2 实测证明能超过 native MTP。</p>
+<p>对 GLM-5.2 这类已经带 NextN/MTP 的先进 MoE/FP8 模型，当前最佳生产路线仍是 native MTP；从长期技术上限看，DSpark、DFly + D-cut、JetSpec 代表的“并行 proposal + 更强因果建模 + 动态验证调度”更值得研究，但必须用 GLM-5.2 实测证明能超过 native MTP。</p>
 </blockquote>
 <h2 id="2-资料来源">2. 资料来源</h2>
 <div class="table-wrap"><table>
@@ -299,6 +313,10 @@
 <td>使用 <code>DeepSeek_technique/DeepSpec</code> 中 DSpark/EAGLE-3/DFlash 的配置、模型、loss、eval 代码理解实现细节。</td>
 </tr>
 <tr>
+<td>AngelSpec 论文与本地代码</td>
+<td>研读 <code>AngelSpec: Towards Real-World High Performance Inference with Speculative Decoding</code>（arXiv:2607.25852v2），并用本地 <code>DeepSeek_technique/AngelSpec</code> 核对 DFly 架构、训练配置和当前开源边界。</td>
+</tr>
+<tr>
 <td>本仓库 GLM-5.2 报告</td>
 <td>使用 native MTP、RedHatAI DSpark、本地 DSpark step10000 等已有实测指标。</td>
 </tr>
@@ -308,7 +326,7 @@
 </tr>
 <tr>
 <td>公开论文和资料</td>
-<td>参考 speculative decoding、speculative sampling、Medusa、EAGLE/EAGLE-3、DFlash、DSpark paper、FastMTP、P-EAGLE、TriForce、JetSpec、HyperDFlash 等。</td>
+<td>参考 speculative decoding、speculative sampling、Medusa、EAGLE/EAGLE-3、DFlash、DSpark、AngelSpec/DFly/D-cut、FastMTP、P-EAGLE、TriForce、JetSpec、HyperDFlash 等。</td>
 </tr>
 </tbody>
 </table></div>
@@ -837,6 +855,8 @@ $$</p>
     A --&gt; H[native MTP 和 FastMTP]
     C --&gt; I[DFlash block 并行]
     I --&gt; J[DSpark 半自回归和动态验证]
+    I --&gt; M[DFly 混合条件和 hidden correction]
+    M --&gt; N[D-cut 跨请求动态验证预算]
     I --&gt; K[JetSpec 因果并行树]
     A --&gt; L[TriForce 长上下文层级推测]
 </div>
@@ -852,7 +872,7 @@ $$</p>
 <tbody>
 <tr>
 <td>draft 来源</td>
-<td>小模型、Medusa、EAGLE、MTP、DFlash、DSpark</td>
+<td>小模型、Medusa、EAGLE、MTP、DFlash、DSpark、DFly</td>
 <td>越贴近 target，接受率越高；越轻量，draft latency 越低。</td>
 </tr>
 <tr>
@@ -862,8 +882,8 @@ $$</p>
 </tr>
 <tr>
 <td>验证策略</td>
-<td>固定长度、动态树、confidence scheduler</td>
-<td>验证越长可能 $\tau$ 越高，但也更消耗 target batch 容量。</td>
+<td>固定长度、动态树、confidence scheduler、D-cut 全局预算</td>
+<td>验证越长可能 $\tau$ 越高，但也更消耗 target batch 容量；高并发下还需要跨请求分配验证资源。</td>
 </tr>
 <tr>
 <td>适用场景</td>
@@ -889,6 +909,7 @@ $$</p>
     K --&gt; L["2026\nDSpark\nDeepSeek-AI / DeepSpec\n本地 DSpark paper"]
     L --&gt; M["2026-06\nJetSpec\nHao AI Lab 等\narXiv:2606.18394"]
     M --&gt; N["2026-06\nHyperDFlash\nHyperDFlash 作者团队\narXiv:2606.26744"]
+    N --&gt; O["2026-07\nAngelSpec / DFly + D-cut\n腾讯混元 AI Infra\narXiv:2607.25852"]
 </div>
 <p>时间线可以粗略分成四个阶段：</p>
 <div class="table-wrap"><table>
@@ -922,7 +943,7 @@ $$</p>
 <tr>
 <td>block-parallel / scheduler 阶段</td>
 <td>2026 起</td>
-<td>DFlash、DSpark、P-EAGLE、JetSpec、HyperDFlash</td>
+<td>DFlash、DSpark、DFly + D-cut、P-EAGLE、JetSpec、HyperDFlash</td>
 <td>重点转向降低 draft latency、并行生成 block/tree proposal，并用 confidence / scheduler 减少无效验证。</td>
 </tr>
 </tbody>
@@ -1021,6 +1042,12 @@ $$</p>
 <td>HyperDFlash 作者团队</td>
 <td>针对 Hyper-Connection 架构的 block speculative decoding。</td>
 </tr>
+<tr>
+<td>AngelSpec / DFly + D-cut</td>
+<td>2026-07</td>
+<td>腾讯混元 AI Infra</td>
+<td>DFly 改进 DFlash-family drafter；D-cut 按 batch 共享预算动态裁剪 target verification。</td>
+</tr>
 </tbody>
 </table></div>
 <div class="table-wrap"><table>
@@ -1110,6 +1137,20 @@ $$</p>
 <td>半自回归分解 + TV acceptance label + 硬件感知 prefix scheduler。</td>
 <td>兼顾并行 draft 和位置依赖，论文及线上系统结果强。</td>
 <td>对训练数据、hidden layer、runtime 语义和 scheduler 极敏感。</td>
+</tr>
+<tr>
+<td>DFly</td>
+<td>融合 DFlash 的共享非线性 target context 与 DFlare 的逐层 target view，再用 predecessor-conditioned hidden-correction head 补 block 内因果依赖。</td>
+<td>$g_t^{(i)}=\operatorname{RMSNorm}(c_t+f_t^{(i)})$，随后在 hidden state 层引入前驱 token 修正。</td>
+<td>Qwen3-8B 同框 accepted length 略高于 DSpark；Hy3-A21B 相对 DFlash 平均提高约 <code>29.8%</code>。</td>
+<td>backbone 仍并行但 correction head 逐位置执行；对训练域和 thinking mode 敏感。</td>
+</tr>
+<tr>
+<td>D-cut</td>
+<td>把 target verification 看成 batch 共享资源，按跨请求 prefix survival 和 profiling 成本选择验证预算。</td>
+<td>$\rho^*=\arg\max_{\rho}U(B,\rho)/C(B,\rho)$。</td>
+<td>高并发时丢弃低收益 suffix，论文线上流量 c64 相对 DFly throughput 提高 <code>15.7%</code>。</td>
+<td>依赖置信度校准、真实硬件 profiling、ragged packing/CUDA graph；当前本地仓库未形成 GLM-5.2 runtime 闭环。</td>
 </tr>
 <tr>
 <td>P-EAGLE</td>
@@ -2702,9 +2743,443 @@ $$</p>
     H --&gt; I
 </div>
 <p>所以 DSpark 不把训练目标只写成一个 CE，是因为它面对的不是普通语言模型训练问题，而是投机解码服务问题：<strong>draft 要生成得像 target，分布要能被 target 接受，还要能预测自己哪些位置值得验证。</strong></p>
-<h2 id="10-公开测试对比">10. 公开测试对比</h2>
+<h2 id="10-angelspec-dfly-d-cut">10. AngelSpec：DFly + D-cut</h2>
+<p>arXiv:2607.25852v2 的标题是 <code>AngelSpec: Towards Real-World High Performance Inference with Speculative Decoding</code>。名称需要先澄清：论文提出的 block-parallel drafter 叫 <strong>DFly</strong>，不是 <code>DFlay</code>；服务侧动态验证方法叫 <strong>D-cut</strong>。因此，把这篇论文的新投机采样路径概括为“DFly + D-cut”基本正确，但 AngelSpec 本身是更大的统一训练框架，还包含经过 TTT 后训练的 MTP 路线。</p>
+<p>论文的出发点不是寻找一个在所有请求上都最优的 drafter，而是承认真实 workload 异质性：</p>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>Workload 特征</th>
+<th>论文推荐路径</th>
+<th>原因</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>开放聊天、高熵、多种回答都合理</td>
+<td>TTT 后训练的短 horizon MTP</td>
+<td>深位置接受率衰减快，长 block 容易过度投机；MTP 提议短、开销稳定。</td>
+</tr>
+<tr>
+<td>代码、数学、形式化推理、低熵连续片段</td>
+<td>DFly block-parallel drafter</td>
+<td>语法、标识符和推理步骤对后续 token 约束更强，长 block 更容易形成有效接受前缀。</td>
+</tr>
+<tr>
+<td>高并发、target verification 开始成为瓶颈</td>
+<td>DFly + D-cut</td>
+<td>在保持 target 验证的前提下，跨请求裁掉低收益 suffix，把验证容量给高置信 prefix。</td>
+</tr>
+</tbody>
+</table></div>
+<h3 id="10-1-angelspec-的整体分层">10.1 AngelSpec 的整体分层</h3>
+<p>AngelSpec 同时从训练、drafter 架构和在线验证三个层面优化：</p>
+<div class="mermaid">flowchart LR
+    A[真实请求 workload] --&gt; B{请求结构特征}
+    B --&gt; C[高熵聊天：TTT MTP]
+    B --&gt; D[代码数学：DFly]
+    C --&gt; E[短 horizon proposal]
+    D --&gt; F[长 block-parallel proposal]
+    F --&gt; G[D-cut 跨请求分配验证预算]
+    E --&gt; H[target 严格验证]
+    G --&gt; H
+    H --&gt; I[提交接受前缀和 bonus token]
+</div>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>层次</th>
+<th>AngelSpec 做法</th>
+<th>解决的问题</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>数据与训练</td>
+<td>MTP 使用多样聊天/长上下文数据；DFly 加强代码和数学数据；response 由 target model rollout 生成。</td>
+<td>避免一个均匀数据混合同时服务所有 workload，减少 teacher-data mismatch。</td>
+</tr>
+<tr>
+<td>Drafter 架构</td>
+<td>MTP 走共享参数多 depth TTT；DFly 走混合 target conditioning + hidden-correction AR head。</td>
+<td>分别优化短 horizon 稳定性和长 block 的并行度/后缀连贯性。</td>
+</tr>
+<tr>
+<td>接受率目标</td>
+<td>使用 KL、TV、LK loss、D-PACE 和 end-to-end TV 等 acceptance-aligned objective。</td>
+<td>训练目标从“预测真实 token”进一步对齐到“提高 target 接受概率”。</td>
+</tr>
+<tr>
+<td>Serving</td>
+<td>D-cut 根据 prefix confidence 和实际硬件 cost profile 动态选择验证预算。</td>
+<td>避免高并发下 target 为大量低价值 block suffix 付费。</td>
+</tr>
+<tr>
+<td>工程框架</td>
+<td>推理 worker 生成 target hidden states，经 Mooncake 传给训练 worker；支持文档感知 packing 和在线 acceptance eval。</td>
+<td>大 MoE target 下解耦 hidden-state 生成与 drafter 训练，减少存储和流水线停顿。</td>
+</tr>
+</tbody>
+</table></div>
+<p>需要注意，论文展示的是两条互补路线，并没有证明一个自动 workload router 已经能够无条件把线上请求准确分流到 MTP 或 DFly。落地时仍需要按业务域、thinking mode 和实测吞吐决定 drafter。</p>
+<h3 id="10-2-dfly-与-dflash-dflare-dspark-的关系">10.2 DFly 与 DFlash、DFlare、DSpark 的关系</h3>
+<p>DFly 属于 DFlash family。它并不是把 DFlash 完全换成自回归 drafter，而是保留昂贵 backbone 的 block-parallel 计算，只在 target conditioning 和输出端的轻量顺序修正上增强。</p>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>方法</th>
+<th>Target context</th>
+<th>Block 内依赖</th>
+<th>在线验证调度</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>DFlash</td>
+<td>多个 target layer hidden states 经共享 FC 变换，所有 draft layer 复用同一 context。</td>
+<td>多个位置主要并行预测，缺少已采样前驱 token 条件。</td>
+<td>通常固定 block 或依赖外部调度。</td>
+</tr>
+<tr>
+<td>DFlare</td>
+<td>每个 draft layer 学习不同的 target-layer 加权视图。</td>
+<td>仍以 block-parallel 位置预测为主。</td>
+<td>不属于核心架构。</td>
+</tr>
+<tr>
+<td>DSpark</td>
+<td>DFlash 式 parallel backbone。</td>
+<td>Markov/RNN sequential head 在 logits 或状态上补顺序依赖。</td>
+<td>confidence head + hardware-aware scheduler。</td>
+</tr>
+<tr>
+<td>DFly</td>
+<td>DFlash 共享非线性 context + DFlare 逐 draft-layer target view。</td>
+<td>默认使用 predecessor-conditioned hidden-correction head。</td>
+<td>论文部署实验与 D-cut 组合。</td>
+</tr>
+</tbody>
+</table></div>
+<p>一句话概括：</p>
+<blockquote>
+<p>DFly 在 DFlash 的“共享、表达力强的 target context”和 DFlare 的“逐层专用 target view”之间做加法，再用比固定 Markov transition 更依赖当前 hidden state 的轻量 AR correction 补回 block 内因果关系。</p>
+</blockquote>
+<h3 id="10-3-hybrid-target-conditioning-backbone">10.3 Hybrid target-conditioning backbone</h3>
+<p>设从 target model 选择 $T$ 个层，第 $j$ 个 target layer 在位置 $t$ 的 hidden state 为 $h_t^{(j)}$。DFlash 先拼接多个层，再用共享 FC 得到：</p>
+<p>$$
+c_t=W_{fc}[h_t^{(1)};\ldots;h_t^{(T)}]+b_{fc}
+$$</p>
+<p>$c_t$ 能学习跨 target layer 的非线性交互，表达力强，但所有 draft layer 都使用同一份表示，缺少 layer specialization。</p>
+<p>DFlare 为第 $i$ 个 draft layer 学习一组 target-layer fusion 权重：</p>
+<p>$$
+\alpha^{(i)}=\operatorname{softmax}(W_{fuse,i,:})
+$$</p>
+<p>$$
+f_t^{(i)}=\sum_{j=1}^{T}\alpha_j^{(i)}h_t^{(j)}
+$$</p>
+<p>这样不同深度的 draft layer 可以选择不同 target 层，但单纯标量加权没有 DFlash FC 分支的跨层变换能力。DFly 将两者合并：</p>
+<p>$$
+g_t^{(i)}=\operatorname{RMSNorm}\left(c_t+f_t^{(i)}\right)
+$$</p>
+<p>其中：</p>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>符号</th>
+<th>含义</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>$c_t$</td>
+<td>所有 draft layer 共享的、经过非线性变换的 target context。</td>
+</tr>
+<tr>
+<td>$f_t^{(i)}$</td>
+<td>第 $i$ 个 draft layer 专属的 target-layer 加权视图。</td>
+</tr>
+<tr>
+<td>$g_t^{(i)}$</td>
+<td>第 $i$ 个 draft layer 最终使用的条件表示。</td>
+</tr>
+</tbody>
+</table></div>
+<p>这个设计只为 layer fusion 增加 $D\times T$ 个标量权重，其中 $D$ 是 draft layer 数；训练完成后 fusion 系数可以预计算。论文消融显示，hybrid backbone 在保持数学、聊天表现的同时，对代码任务提升更明显。</p>
+<h3 id="10-4-predecessor-conditioned-hidden-correction-head">10.4 Predecessor-conditioned hidden-correction head</h3>
+<p>DFly backbone 一次并行产生 block 内 $B$ 个位置的 hidden states 和 base logits：</p>
+<p>$$
+z_{t+1}^{D},\ldots,z_{t+B}^{D},\qquad U_{t+1},\ldots,U_{t+B}
+$$</p>
+<p>如果直接从这些边缘分布并行采样，第 $i$ 个位置近似的是：</p>
+<p>$$
+q(x_{t+i}\mid x_{\le t})
+$$</p>
+<p>它不知道同一 block 里前面实际选中了哪个 token。DFly 在并行 backbone 后放置一个很小的顺序 head，使 proposal 分布恢复为：</p>
+<p>$$
+q(X_{t+1:t+B}\mid x_{\le t})
+=
+\prod_{i=1}^{B}
+q_i(x_{t+i}\mid x_{\le t},x_{t+1:t+i-1})
+$$</p>
+<p>论文先比较 DSpark 式低秩 Markov bias：</p>
+<p>$$
+b_{t+i}=W_1[x_{t+i-1}]W_2,
+\qquad
+q_i=\operatorname{softmax}(U_{t+i}+b_{t+i})
+$$</p>
+<p>再采用表达力更强的 hidden correction。令 $\tilde z_{t+i}^{D}$ 为归一化后的当前位置 draft hidden state，$e_{t+i-1}$ 为归一化后的已采样前驱 token embedding：</p>
+<p>$$
+\hat z_{t+i}^{D}
+=
+z_{t+i}^{D}
++
+\operatorname{SwiGLU}
+\left([\tilde z_{t+i}^{D};e_{t+i-1}]\right)
+$$</p>
+<p>$$
+q_i=\operatorname{softmax}\left(\operatorname{LMHead}(\hat z_{t+i}^{D})\right)
+$$</p>
+<p>两种 head 的区别是：</p>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>Head</th>
+<th>修正依据</th>
+<th>特点</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Markov head</td>
+<td>前驱 token identity 对应的低秩转移 bias。</td>
+<td>参数和计算小，但同一前驱 token 在不同位置/语境下修正模式较固定。</td>
+</tr>
+<tr>
+<td>Hidden-correction head</td>
+<td>前驱 token embedding + 当前 block 位置的 draft hidden state。</td>
+<td>同时利用当前语义状态和前驱 token，能做 context-dependent correction。</td>
+</tr>
+</tbody>
+</table></div>
+<p>因此 DFly 不是“整个 block 完全并行”。准确说法是：<strong>高成本 Transformer backbone 仍一次并行计算整个 block，轻量 correction head 再逐位置引入实际前驱 token</strong>。论文在 Hy3 消融中，Markov head 把平均 accepted length 从 <code>4.40</code> 提高到 <code>4.56</code>，hidden correction 进一步提高到 <code>4.60</code>。</p>
+<h3 id="10-5-dfly-的训练目标和数据策略">10.5 DFly 的训练目标和数据策略</h3>
+<p>DFly 不只改模型结构，还把训练分成两个阶段：</p>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>阶段</th>
+<th>目标</th>
+<th>原因</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Cold start</td>
+<td>D-PACE 加权的 hybrid LK loss。</td>
+<td>初始 draft 与 target 差距大时，直接优化多位置乘积形式的 end-to-end TV 容易梯度弱或不稳定。</td>
+</tr>
+<tr>
+<td>Final stage</td>
+<td>基于预期 accepted length 的 end-to-end TV objective。</td>
+<td>直接优化连续多位置都被接受的概率代理，更接近最终 speculative decoding 目标。</td>
+</tr>
+</tbody>
+</table></div>
+<p>位置级 draft-target overlap 为：</p>
+<p>$$
+\alpha(p,q)=\sum_v\min(p(v),q(v))=1-TV(p,q)
+$$</p>
+<p>end-to-end TV 目标会使用连续位置 overlap 的乘积，因此前面位置自然获得更大影响：前缀早期一旦拒绝，后面 token 即使单点预测正确也无法提交。这与第 9 节 DSpark 强调前缀存活概率的动机一致，但 DFly 的最终训练 objective 更直接面向整段期望接受长度。</p>
+<p>数据方面，论文为 Hy3 的 DFly 额外加入 <code>700K</code> 个结构化领域 prompt：代码约 <code>500K</code>，数学约 <code>200K</code>；过滤与评测样本存在至少连续 16 token 重叠的 prompt，再由 target model 重新生成 response。结果说明训练域非常重要：代码/数学扩展继续提高结构化任务接受长度，但 MT-Bench 略有下降。因此不能把 DFly 的论文结果解释成“所有 workload 都统一优于 MTP/DSpark”。</p>
+<p>论文还发现 thinking mode 必须匹配。Hy3 DFly 在 no-thinking 训练/no-thinking 测试时平均 accepted length 为 <code>4.79</code>；直接拿该模型测 high-thinking 会降到 <code>3.29</code>。分别训练 high-thinking 模型后，在 high-thinking 测试下恢复到 <code>4.27</code>。这意味着 GLM-5.2 适配时，thinking 与 non-thinking 数据、checkpoint 和验收必须分开。</p>
+<h3 id="10-6-d-cut-跨请求的动态验证预算">10.6 D-cut：跨请求的动态验证预算</h3>
+<p>D-cut 不改变 drafter 或 target 权重。它解决的是 serving 问题：同一 batch 内，有些请求的长 prefix 很可能被接受，有些请求第二三个 token 后就会失败；固定为每个请求验证同样深度，会把 target batch 容量浪费在低价值 suffix 上。</p>
+<p>设一个 batch 有 $B$ 个请求，每个请求提出 $D$ 个 draft token。请求 $i$ 最终保留 $n_i$ 个 draft token，并额外保留一个确定存在的 target bonus 位置。若完整验证时该请求实际能接受 $L_i$ 个 draft token，则本轮推进量为：</p>
+<p>$$
+A_i(n_i)=1+\min(L_i,n_i)
+$$</p>
+<p>其期望可以写成 prefix survival 概率之和：</p>
+<p>$$
+\mathbb{E}[A_i(n_i)]
+=
+1+\sum_{k=1}^{n_i}\Pr(L_i\ge k)
+$$</p>
+<p>D-cut 用 drafter 给出的逐 token 置信度 $c_{i,t}$ 估计第 $k$ 个 prefix 的存活概率：</p>
+<p>$$
+s_{i,k}=\prod_{t=1}^{k}c_{i,t},
+\qquad s_{i,0}=1
+$$</p>
+<p>于是请求 $i$ 保留深度 $n_i$ 的预计推进量为：</p>
+<p>$$
+\hat A_i(n_i)=\sum_{k=0}^{n_i}s_{i,k}
+$$</p>
+<p>因为 $s_{i,k}$ 随深度单调不增，把所有请求的 $s_{i,k}$ 展平后取全局 top-$K$，并在同分时优先浅位置，就会自然得到每个请求的连续 prefix，不会产生“保留第 4 个 token、却跳过第 3 个 token”的非法空洞。</p>
+<p>D-cut 不只判断“哪些 token 值得验证”，还判断“当前总共验证多少 token 最划算”。论文只在少量候选预算比例中搜索：</p>
+<p>$$
+\mathcal{R}=\{0.25,0.50,0.75,1.00\}
+$$</p>
+<p>对于 batch size $B$ 和比例 $\rho$，全局验证预算为：</p>
+<p>$$
+K_{\rho}(B)
+=
+\max\left(B,\left\lceil\rho B(D+1)\right\rceil\right)
+$$</p>
+<p>下界 $B$ 保证每个请求至少保留 bonus 位置。对每个候选 $\rho$，top-$K$ 会得到不同的请求级保留深度 $n_i^{(\rho)}$，对应的 batch 预计推进量为：</p>
+<p>$$
+U(B,\rho)
+=
+\sum_{i=1}^{B}\hat A_i\left(n_i^{(\rho)}\right)
+$$</p>
+<p>服务启动时预先 profiling 每个 $(B,\rho)$ 下完整 speculative step 的成本 $C(B,\rho)$，包含 draft、选择、packing 和 target verification。运行时选择：</p>
+<p>$$
+\rho^*
+=
+\arg\max_{\rho\in\mathcal{R}}
+\frac{U(B,\rho)}{C(B,\rho)}
+$$</p>
+<p>完整流程如下：</p>
+<div class="mermaid">flowchart TD
+    A[DFly 为每个请求生成 block 和逐位置置信度] --&gt; B[计算各请求 prefix survival]
+    B --&gt; C[跨请求展平并按预计收益排序]
+    C --&gt; D[查询真实部署的运行成本表]
+    D --&gt; E[选择使预计推进量除以 step cost 最大的预算比例]
+    E --&gt; F[得到每个请求不同的连续保留深度]
+    F --&gt; G[打包成 dense verification batch]
+    G --&gt; H[target 正常验证保留 token]
+</div>
+<p>D-cut 只裁剪“送去 target 验证的深度”，不会把未验证 token 直接提交。论文在 deterministic draft + target-only verification 的部署协议下声称严格保持 target 输出分布。若迁移到一般 stochastic speculative sampling，仍要单独验证 $p/q$ 接受率、residual sampling、随机数和动态截断组合后的等价性，不能只凭 confidence 直接接受 token。</p>
+<h3 id="10-7-公开实验结果">10.7 公开实验结果</h3>
+<h4>10.7.1 DFly draft quality</h4>
+<p>论文 Table 3 在 temperature <code>1</code>、no-thinking 下给出同框平均 accepted length：</p>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>Target</th>
+<th style="text-align:right">MTP</th>
+<th style="text-align:right">DFlash</th>
+<th style="text-align:right">DSpark</th>
+<th style="text-align:right">DFly</th>
+<th>结论</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Qwen3-8B</td>
+<td style="text-align:right">3.24</td>
+<td style="text-align:right">4.57</td>
+<td style="text-align:right">5.32</td>
+<td style="text-align:right"><strong>5.41</strong></td>
+<td>DFly 相对 DSpark 只高约 <code>1.7%</code>，主要优势在 math/code；MT-Bench 上 DSpark <code>3.77</code> 仍高于 DFly <code>3.67</code>。</td>
+</tr>
+<tr>
+<td>Hy3-A21B</td>
+<td style="text-align:right">3.00</td>
+<td style="text-align:right">3.69</td>
+<td style="text-align:right">未报告</td>
+<td style="text-align:right"><strong>4.79</strong></td>
+<td>DFly 相对 DFlash 提高约 <code>29.8%</code>，相对 MTP 提高约 <code>59.7%</code>；不能推断其在 Hy3 上高于 DSpark，因为论文未给该项。</td>
+</tr>
+</tbody>
+</table></div>
+<p>这里最重要的读法不是“DFly 全面取代 DSpark”，而是：混合 target conditioning 与 hidden correction 在结构化 workload 上有效；Qwen3-8B 相对 DSpark 的总体提升较小，且 chat 指标存在反例。</p>
+<h4>10.7.2 DFly 端到端吞吐</h4>
+<p>在 Hy3-295B-A21B、TP=8、temperature <code>1</code> 的六任务测试中，DFly-8 在并发 <code>4/8/16/32/64</code> 的平均吞吐加速分别为 <code>1.98x/2.02x/2.22x/2.40x/2.11x</code>；同条件 DFlash-8 为 <code>1.79x/1.82x/1.99x/2.15x/1.89x</code>。因此 DFly 在所有测试并发点都最高，相对 DFlash 的平均吞吐提高约 <code>10.5%-11.8%</code>。</p>
+<p>这个结果也说明 accepted length 不是唯一指标。DFly 的 hidden-correction head 有顺序计算，但 profiling 中其平均 decode-step latency proxy 并未高于 Markov 版本；accepted length 增益足以覆盖 correction 开销。</p>
+<h4>10.7.3 D-cut 在线流量结果</h4>
+<p>论文使用 Hy3-295B-A21B、TP=8、8 张 H20，回放混元线上流量并扫 concurrency <code>2-64</code>：</p>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>观察点</th>
+<th style="text-align:right">DFly</th>
+<th style="text-align:right">DFly + D-cut</th>
+<th style="text-align:right">变化</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>c48 aggregate throughput</td>
+<td style="text-align:right">860 tok/s</td>
+<td style="text-align:right">886 tok/s</td>
+<td style="text-align:right"><code>+3.0%</code></td>
+</tr>
+<tr>
+<td>c56 aggregate throughput</td>
+<td style="text-align:right">858 tok/s</td>
+<td style="text-align:right">937 tok/s</td>
+<td style="text-align:right"><code>+9.2%</code></td>
+</tr>
+<tr>
+<td>c64 aggregate throughput</td>
+<td style="text-align:right">848 tok/s</td>
+<td style="text-align:right">981 tok/s</td>
+<td style="text-align:right"><code>+15.7%</code></td>
+</tr>
+<tr>
+<td>约 15.3 tok/s/user 的匹配点</td>
+<td style="text-align:right">c56、858 tok/s</td>
+<td style="text-align:right">c64、981 tok/s</td>
+<td style="text-align:right">同等单用户速度下总吞吐约 <code>+14%</code></td>
+</tr>
+<tr>
+<td>全 sweep 平均 accepted length</td>
+<td style="text-align:right">2.50</td>
+<td style="text-align:right">2.46</td>
+<td style="text-align:right">只下降约 <code>1.5%</code></td>
+</tr>
+<tr>
+<td>c64 accepted length</td>
+<td style="text-align:right">2.50</td>
+<td style="text-align:right">2.43</td>
+<td style="text-align:right">下降约 <code>2.8%</code>，但吞吐提高 <code>15.7%</code></td>
+</tr>
+</tbody>
+</table></div>
+<p>收益主要出现在 DFly 已进入 verification-bound 的高负载区。低并发下 target 尚未饱和，裁剪 verification 可能收益小甚至因为 selector/packing 开销出现负收益。论文当前 D-cut 也只有 piecewise CUDA graph，$\rho=1$ 时仍存在选择和 packing 成本，所以不能假设动态调度免费。</p>
+<h3 id="10-8-对-glm-5-2-的意义与当前开源边界">10.8 对 GLM-5.2 的意义与当前开源边界</h3>
+<p>本仓库已经存在 <code>DeepSeek_technique/AngelSpec</code>，其 README 和代码显示当前统一支持 DFly、DFlash、DFlare、EAGLE-3、DSpark、MTP 六类训练架构，并提供 Qwen3-8B DFly 单机例子与 Hy3 DFly 多机例子。这意味着 DFly 的训练实现不是只有论文描述，可以作为后续 GLM-5.2 适配起点。</p>
+<p>但目前不能把它直接当成 GLM-5.2 可部署方案：</p>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>缺口</th>
+<th>当前判断</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>GLM-5.2 target 接入</td>
+<td>本地 AngelSpec 公开示例和 released checkpoint 未包含 GLM-5.2，需要补 target hidden-state extraction、layer ids、模型配置与 MoE/FP8 对齐。</td>
+</tr>
+<tr>
+<td>DFly checkpoint</td>
+<td>当前没有 GLM-5.2 DFly checkpoint，不能直接比较 native MTP 或本地 DSpark。</td>
+</tr>
+<tr>
+<td>Runtime</td>
+<td>需要确认当前 vLLM/speculators 是否能加载 DFly 的 hybrid fusion 和 hidden-correction 权重，并做单步 logits/KV/position 对齐。</td>
+</tr>
+<tr>
+<td>D-cut 实现</td>
+<td>当前本地 AngelSpec 中可以看到 D-cut 结果说明，但没有找到可直接复用的 D-cut serving runtime 入口；可能需要对接论文作者部署栈或自行实现。</td>
+</tr>
+<tr>
+<td>Confidence 来源</td>
+<td>D-cut 需要逐位置置信度；本地 DFly 默认没有 DSpark 式 confidence head，迁移时必须明确置信度定义、校准方法和保存格式。</td>
+</tr>
+<tr>
+<td>Workload/模式</td>
+<td>需要分别训练和测试 thinking、non-thinking，并至少覆盖短上下文 math/code/chat 与 <code>50K:256</code> 长上下文。</td>
+</tr>
+</tbody>
+</table></div>
+<p>因此对 GLM-5.2 的合理结论是：</p>
+<blockquote>
+<p><strong>DFly 是继 DSpark 之后很值得加入的 block-parallel 训练候选，D-cut 是高并发 verification-bound 场景的服务优化候选；两者都应进入同数据、同 runtime 的 A/B，但现阶段证据不足以替代 native MTP，也不足以直接改变第 13 节原有“EAGLE-3 做 baseline、DSpark 做已落地攻关主线”的排序。</strong></p>
+</blockquote>
+<h2 id="11-公开测试对比">11. 公开测试对比</h2>
 <p>这一节只整理公开论文、公开 GitHub / HuggingFace 模型卡中已经给出的对比结果。不同论文的硬件、模型、任务、temperature、batch size、是否包含 bonus token 都不同，因此不能把所有数字直接当成同一 leaderboard。更可靠的读法是：优先看同一篇论文或同一模型卡内部的横向比较，再看跨论文趋势。</p>
-<h3 id="10-1-公开资料中有直接横向对比的结果">10.1 公开资料中有直接横向对比的结果</h3>
+<h3 id="11-1-公开资料中有直接横向对比的结果">11.1 公开资料中有直接横向对比的结果</h3>
 <div class="table-wrap"><table>
 <thead>
 <tr>
@@ -2752,6 +3227,13 @@ $$</p>
 <td>DSpark 在同一训练框架中证明了“parallel backbone + sequential head + confidence scheduler”比单纯 EAGLE-3 或 DFlash 更强。</td>
 </tr>
 <tr>
+<td>AngelSpec paper</td>
+<td>DFly vs MTP / DFlash / DSpark；D-cut vs DFly</td>
+<td>Qwen3-8B、Hy3-295B-A21B；数学、代码、聊天和混元线上流量</td>
+<td>Qwen3-8B 平均 accepted length：DFly <code>5.41</code>、DSpark <code>5.32</code>、DFlash <code>4.57</code>、MTP <code>3.24</code>；Hy3-A21B 上 DFly <code>4.79</code>、DFlash <code>3.69</code>。Hy3 离线六任务中 DFly 为 AR 的 <code>1.98x-2.40x</code>；线上流量 c64 中 D-cut 相对 DFly throughput 提升 <code>15.7%</code>。</td>
+<td>DFly 说明 hybrid target conditioning + hidden correction 能继续改善 DFlash family；D-cut 说明高并发下应把 verification 当成跨请求共享资源。</td>
+</tr>
+<tr>
 <td>P-EAGLE paper</td>
 <td>P-EAGLE vs autoregressive EAGLE-3、ParallelSpec、PARD</td>
 <td>GPT-OSS 120B/20B、Qwen3-Coder 30B，长输出和 OOD benchmarks</td>
@@ -2788,7 +3270,7 @@ $$</p>
 </tr>
 </tbody>
 </table></div>
-<h3 id="10-2-dspark-paper-的同框-accepted-length-表">10.2 DSpark paper 的同框 accepted length 表</h3>
+<h3 id="11-2-dspark-paper-的同框-accepted-length-表">11.2 DSpark paper 的同框 accepted length 表</h3>
 <p>DSpark paper 的 Table 1 是目前最有参考价值的同框对比之一：同一训练框架、同一批任务，同时比较 EAGLE-3、DFlash、DSpark。数值为每轮 accepted length $\tau$，越高越好，通常包含 target bonus token。</p>
 <div class="table-wrap"><table>
 <thead>
@@ -3005,7 +3487,7 @@ $$</p>
 </tr>
 </tbody>
 </table></div>
-<h3 id="10-3-github-huggingface-模型卡侧对比">10.3 GitHub / HuggingFace 模型卡侧对比</h3>
+<h3 id="11-3-github-huggingface-模型卡侧对比">11.3 GitHub / HuggingFace 模型卡侧对比</h3>
 <p>vLLM speculators 项目和 RedHatAI 模型卡提供了一些工程侧指标。它们不一定和论文 Table 1 同任务同口径，但能反映开源生态当前可用性。</p>
 <div class="table-wrap"><table>
 <thead>
@@ -3055,7 +3537,7 @@ $$</p>
 </tr>
 </tbody>
 </table></div>
-<h3 id="10-4-本仓库-glm-5-2-已有实测作为对照">10.4 本仓库 GLM-5.2 已有实测作为对照</h3>
+<h3 id="11-4-本仓库-glm-5-2-已有实测作为对照">11.4 本仓库 GLM-5.2 已有实测作为对照</h3>
 <p>公开资料说明技术上限，但 GLM-5.2 是否受益必须看本地实测。下面只列本仓库已经记录过的结果。</p>
 <div class="table-wrap"><table>
 <thead>
@@ -3140,8 +3622,8 @@ $$</p>
 </tr>
 </tbody>
 </table></div>
-<h2 id="11-对比结论">11. 对比结论</h2>
-<h3 id="11-1-按技术效果排序">11.1 按技术效果排序</h3>
+<h2 id="12-对比结论">12. 对比结论</h2>
+<h3 id="12-1-按技术效果排序">12.1 按技术效果排序</h3>
 <p>如果只看公开论文中的同框实验，结论大致如下：</p>
 <div class="table-wrap"><table>
 <thead>
@@ -3154,23 +3636,23 @@ $$</p>
 <tbody>
 <tr>
 <td>accepted length 上限</td>
-<td>JetSpec / DSpark / DFlash &gt; EAGLE-3 &gt; Medusa / 小 draft</td>
-<td>JetSpec 摘要报告 MATH-500 最高 <code>9.64x</code>；DSpark Table 1 在 Qwen3/Gemma4 上稳定超过 EAGLE-3/DFlash；DFlash 论文中明显超过 EAGLE-3。</td>
+<td>JetSpec / DFly / DSpark / DFlash &gt; EAGLE-3 &gt; Medusa / 小 draft</td>
+<td>JetSpec 摘要报告 MATH-500 最高 <code>9.64x</code>；AngelSpec 中 DFly 在 Qwen3-8B 平均值略高于 DSpark，并在 Hy3 上明显超过 DFlash；DSpark Table 1 在 Qwen3/Gemma4 上稳定超过 EAGLE-3/DFlash。跨论文不可组成严格全序。</td>
 </tr>
 <tr>
 <td>成熟通用 baseline</td>
-<td>EAGLE-3 &gt; DFlash / P-EAGLE / MTP finetune &gt; DSpark / JetSpec / HyperDFlash</td>
-<td>speculators 文档明确 EAGLE-3 为 mature；P-EAGLE/DFlash/MTP 是 newer；DSpark/JetSpec 在公开工程入口上仍更靠前沿。</td>
+<td>EAGLE-3 &gt; DFlash / P-EAGLE / MTP finetune &gt; DSpark / DFly / JetSpec / HyperDFlash</td>
+<td>speculators 文档明确 EAGLE-3 为 mature；AngelSpec 已开源 DFly 训练和模型，但其 serving 生态、跨模型 checkpoint 覆盖和 D-cut runtime 仍较新。</td>
 </tr>
 <tr>
 <td>draft latency</td>
-<td>DFlash / JetSpec / P-EAGLE 优于 EAGLE-3</td>
-<td>DFlash 一次 forward 生成 block；JetSpec 一次 forward 生成 tree；P-EAGLE 把 EAGLE-3 多 depth 并行化。</td>
+<td>DFlash / DFly / JetSpec / P-EAGLE 优于 EAGLE-3</td>
+<td>DFlash/DFly 的高成本 backbone 一次生成 block；DFly 只增加轻量 sequential correction；JetSpec 一次生成 tree；P-EAGLE 把 EAGLE-3 多 depth 并行化。</td>
 </tr>
 <tr>
 <td>高并发吞吐</td>
-<td>DSpark 优势突出</td>
-<td>DSpark 的 confidence-scheduled verification 是直接面向 batch capacity 和 throughput curve 的设计，论文给出 DeepSeek-V4 线上提升。</td>
+<td>DFly + D-cut / DSpark 优势突出</td>
+<td>两者都把 verification 视为受限资源；D-cut 进一步用跨请求全局预算和真实 cost profile，在 Hy3 线上流量 c64 相对 DFly 提升 <code>15.7%</code>。</td>
 </tr>
 <tr>
 <td>原生 MTP 模型</td>
@@ -3184,7 +3666,7 @@ $$</p>
 </tr>
 </tbody>
 </table></div>
-<h3 id="11-2-为什么公开结果不能简单相加">11.2 为什么公开结果不能简单相加</h3>
+<h3 id="12-2-为什么公开结果不能简单相加">12.2 为什么公开结果不能简单相加</h3>
 <div class="table-wrap"><table>
 <thead>
 <tr>
@@ -3215,7 +3697,7 @@ $$</p>
 </tr>
 </tbody>
 </table></div>
-<h3 id="11-3-总体判断">11.3 总体判断</h3>
+<h3 id="12-3-总体判断">12.3 总体判断</h3>
 <div class="table-wrap"><table>
 <thead>
 <tr>
@@ -3237,17 +3719,25 @@ $$</p>
 <td>它补了 Markov/RNN sequential head，还加了 confidence scheduler；公开同框结果比 EAGLE-3 和 DFlash 更强。</td>
 </tr>
 <tr>
+<td>DFly 是 DFlash family 的新架构增强</td>
+<td>它把 DFlash shared FC、DFlare per-layer fusion 和 hidden correction 合并；Qwen3-8B 平均 accepted length 略高于 DSpark，但不是所有任务都胜出。</td>
+</tr>
+<tr>
+<td>D-cut 把优化从单请求推进到 batch 全局</td>
+<td>它不直接提高 draft logits 质量，而是在 verification-bound 时用预计收益/实测成本裁剪低价值 suffix；收益依赖负载和 runtime。</td>
+</tr>
+<tr>
 <td>JetSpec 是更前沿的下一代方向</td>
 <td>它解决的是 tree drafting 中的 causality-efficiency dilemma，公开速度很强，但当前工程可用性和 GLM-5.2 适配未知。</td>
 </tr>
 <tr>
 <td>native MTP/FastMTP 是特殊捷径</td>
-<td>只要模型原生带 MTP，优先级通常很高；但用户本节问题要求排除 GLM-5.2 自身 MTP，因此第 12 节单独讨论外部技术。</td>
+<td>只要模型原生带 MTP，优先级通常很高；但用户本节问题要求排除 GLM-5.2 自身 MTP，因此第 13 节单独讨论外部技术。</td>
 </tr>
 </tbody>
 </table></div>
-<h2 id="12-glm-5-2-上排除自身-mtp-后优先使用哪种技术">12. GLM-5.2 上排除自身 MTP 后优先使用哪种技术</h2>
-<h3 id="12-1-结论">12.1 结论</h3>
+<h2 id="13-glm-5-2-上排除自身-mtp-后优先使用哪种技术">13. GLM-5.2 上排除自身 MTP 后优先使用哪种技术</h2>
+<h3 id="13-1-结论">13.1 结论</h3>
 <p>如果不允许使用 GLM-5.2 自身的 native MTP / NextN，优先级应分成“短期可落地”和“中期高上限”两层：</p>
 <div class="table-wrap"><table>
 <thead>
@@ -3269,6 +3759,11 @@ $$</p>
 <td>作为非 MTP 的第一优先级攻关路线。原因是公开同框结果强于 EAGLE-3/DFlash，并且本仓库已有 DeepSpec/GLM-5.2 DSpark 适配基础。</td>
 </tr>
 <tr>
+<td>新增高优先研究对照</td>
+<td><strong>DFly + D-cut</strong></td>
+<td>AngelSpec 已开源 DFly 训练框架且公开结果强；但 GLM-5.2 checkpoint、runtime 和 D-cut 实现均未闭环，应先与 DSpark 同数据 A/B，再决定是否升级为主线。</td>
+</tr>
+<tr>
 <td>暂不作为第一优先级</td>
 <td>DFlash / P-EAGLE / JetSpec</td>
 <td>DFlash 和 P-EAGLE 值得做对照；JetSpec 理论上更强但太新，GLM-5.2 本地还没有代码、checkpoint、runtime 路径。</td>
@@ -3277,10 +3772,10 @@ $$</p>
 </table></div>
 <p>更直接地说：</p>
 <blockquote>
-<p><strong>GLM-5.2 排除自身 MTP 后，生产基线先用 EAGLE-3，攻关首选 DSpark。</strong><br/>
-如果必须只选一个“最值得投入训练和调参”的外部技术，则选 <strong>DSpark</strong>；如果必须只选一个“最稳妥先跑通”的外部技术，则选 <strong>EAGLE-3</strong>。</p>
+<p><strong>GLM-5.2 排除自身 MTP 后，生产基线先用 EAGLE-3，已有适配基础的攻关主线仍选 DSpark，同时新增 DFly + D-cut 作为高优先对照。</strong></p>
+<p>如果必须立即只选一个“最值得投入训练和调参”的外部技术，仍选 <strong>DSpark</strong>；如果允许并行验证下一代候选，则加入 <strong>DFly</strong>，并只在 verification-bound 的高并发阶段评估 <strong>D-cut</strong>；如果必须只选一个“最稳妥先跑通”的外部技术，则选 <strong>EAGLE-3</strong>。</p>
 </blockquote>
-<h3 id="12-2-为什么不是直接选-dflash">12.2 为什么不是直接选 DFlash</h3>
+<h3 id="13-2-为什么不是直接选-dflash">13.2 为什么不是直接选 DFlash</h3>
 <div class="table-wrap"><table>
 <thead>
 <tr>
@@ -3307,7 +3802,7 @@ $$</p>
 </tr>
 </tbody>
 </table></div>
-<h3 id="12-3-为什么不是直接选-p-eagle">12.3 为什么不是直接选 P-EAGLE</h3>
+<h3 id="13-3-为什么不是直接选-p-eagle">13.3 为什么不是直接选 P-EAGLE</h3>
 <div class="table-wrap"><table>
 <thead>
 <tr>
@@ -3334,7 +3829,7 @@ $$</p>
 </tr>
 </tbody>
 </table></div>
-<h3 id="12-4-为什么-dspark-是中期首选">12.4 为什么 DSpark 是中期首选</h3>
+<h3 id="13-4-为什么-dspark-是中期首选">13.4 为什么 DSpark 是中期首选</h3>
 <div class="table-wrap"><table>
 <thead>
 <tr>
@@ -3344,8 +3839,8 @@ $$</p>
 </thead>
 <tbody>
 <tr>
-<td>公开同框效果最强</td>
-<td>DSpark paper 在 Qwen3/Gemma4 上统一对比 EAGLE-3、DFlash、DSpark，DSpark accepted length 宏均值稳定最高。</td>
+<td>已有公开证据充分</td>
+<td>DSpark paper 在 Qwen3/Gemma4 上统一对比 EAGLE-3、DFlash、DSpark，DSpark 宏均值稳定最高；AngelSpec 的 Qwen3-8B 同框结果里 DFly <code>5.41</code> 略高于 DSpark <code>5.32</code>，但差距小且 DSpark 在 MT-Bench 仍更高。</td>
 </tr>
 <tr>
 <td>技术机制更完整</td>
@@ -3365,7 +3860,7 @@ $$</p>
 </tr>
 </tbody>
 </table></div>
-<h3 id="12-5-但是-dspark-不能直接上线">12.5 但是 DSpark 不能直接上线</h3>
+<h3 id="13-5-但是-dspark-不能直接上线">13.5 但是 DSpark 不能直接上线</h3>
 <p>当前本仓库 DSpark 还没达到“替代 native MTP”或“作为外部默认 drafter”的程度。关键问题：</p>
 <div class="table-wrap"><table>
 <thead>
@@ -3397,17 +3892,22 @@ $$</p>
 </tr>
 </tbody>
 </table></div>
-<h3 id="12-6-推荐验证路线">12.6 推荐验证路线</h3>
+<h3 id="13-6-推荐验证路线">13.6 推荐验证路线</h3>
 <div class="mermaid">flowchart TD
     A[非 MTP baseline: dense GLM-5.2] --&gt; B[EAGLE-3 speculators baseline]
-    B --&gt; C[同数据训练 DSpark speculators 格式]
-    C --&gt; D[对齐 layer ids 与 block/anchor 语义]
-    D --&gt; E[DeepSpec offline 与 vLLM runtime 单步 proposal 对齐]
-    E --&gt; F[短上下文九任务 acceptance 对比]
-    F --&gt; G[TPOT/throughput A/B]
-    G --&gt; H{DSpark 是否超过 EAGLE-3 且端到端收益明显}
-    H --&gt;|是| I[进入 DSpark 灰度]
-    H --&gt;|否| J[保留 EAGLE-3 baseline, DSpark 继续训练/对齐]
+    B --&gt; C[同数据训练 DSpark]
+    B --&gt; D[同数据训练 AngelSpec DFly]
+    C --&gt; E[分别对齐 layer ids、block、AR head 和 checkpoint 语义]
+    D --&gt; E
+    E --&gt; F[offline 与 vLLM runtime 单步 proposal 对齐]
+    F --&gt; G[短上下文 math、code、chat acceptance 对比]
+    G --&gt; H[同并发 TPOT 和 throughput A/B]
+    H --&gt; I{候选是否超过 EAGLE-3 且质量无回归}
+    I --&gt; J[保留最优候选进入灰度]
+    I --&gt; K[不达标则保留 EAGLE-3 并继续训练]
+    J --&gt; L{高并发是否 verification-bound}
+    L --&gt; M[若 DFly 路线饱和，再接 D-cut A/B]
+    L --&gt; N[未饱和则不引入 D-cut 开销]
 </div>
 <p>验收阈值建议：</p>
 <div class="table-wrap"><table>
@@ -3435,12 +3935,20 @@ $$</p>
 <td>TPOT 或 per-user speed 至少提升 <code>10%-15%</code>，且质量无回归。</td>
 </tr>
 <tr>
+<td>DFly vs DSpark</td>
+<td>必须使用相同训练数据、target rollout、block size、temperature 和 serving runtime；同时比较 accepted length 与完整 step latency，不能只复用论文跨模型结论。</td>
+</tr>
+<tr>
+<td>D-cut</td>
+<td>只在 profiling 已确认 target verification 饱和后进入；重点验收高并发 throughput、per-user decode speed、accept_len 损失以及 selector/packing/CUDA graph 开销。</td>
+</tr>
+<tr>
 <td>长上下文</td>
 <td><code>50K:256</code> 如果仍低于 <code>1.3</code>，禁止长上下文默认开启。</td>
 </tr>
 </tbody>
 </table></div>
-<h2 id="13-实施风险和工程注意点">13. 实施风险和工程注意点</h2>
+<h2 id="14-实施风险和工程注意点">14. 实施风险和工程注意点</h2>
 <div class="table-wrap"><table>
 <thead>
 <tr>
@@ -3464,6 +3972,16 @@ $$</p>
 <td>长 block 固定验证</td>
 <td>target batch 容量被低概率 suffix 浪费。</td>
 <td>使用动态验证长度或 confidence scheduler。</td>
+</tr>
+<tr>
+<td>D-cut 置信度未校准</td>
+<td>top-$K$ 选错请求/位置，裁掉可接受 prefix 或保留低价值 suffix。</td>
+<td>按模型、任务域、thinking mode、上下文长度分别校准并记录 reliability curve。</td>
+</tr>
+<tr>
+<td>D-cut cost table 与线上环境不一致</td>
+<td>预算比例选择错误，动态调度反而降低吞吐。</td>
+<td>按 GPU、TP/PP、dtype、CUDA graph、batch size 和上下文分桶重新 profiling。</td>
 </tr>
 <tr>
 <td>tokenizer / lm head 不一致</td>
@@ -3492,7 +4010,7 @@ $$</p>
 </tr>
 </tbody>
 </table></div>
-<h2 id="14-参考资料">14. 参考资料</h2>
+<h2 id="15-参考资料">15. 参考资料</h2>
 <div class="table-wrap"><table>
 <thead>
 <tr>
@@ -3508,6 +4026,10 @@ $$</p>
 <tr>
 <td>本地代码</td>
 <td><code>DeepSeek_technique/DeepSpec</code></td>
+</tr>
+<tr>
+<td>本地代码</td>
+<td><code>DeepSeek_technique/AngelSpec</code></td>
 </tr>
 <tr>
 <td>本地代码</td>
@@ -3576,6 +4098,18 @@ $$</p>
 <tr>
 <td>本地 PDF</td>
 <td><code>DeepSeek_technique/DeepSpec/DSpark_paper.pdf</code></td>
+</tr>
+<tr>
+<td>论文/GitHub</td>
+<td>AngelSpec: Towards Real-World High Performance Inference with Speculative Decoding, arXiv:2607.25852v2；<code>https://github.com/Tencent/AngelSpec</code></td>
+</tr>
+<tr>
+<td>论文</td>
+<td>D-cut: Adaptive Verification Depth Pruning for Batched Speculative Decoding, arXiv:2607.14647</td>
+</tr>
+<tr>
+<td>论文</td>
+<td>DFlare: Scaling up Draft Capacity for Block Diffusion Speculative Decoding, arXiv:2606.02091</td>
 </tr>
 <tr>
 <td>论文/GitHub</td>
