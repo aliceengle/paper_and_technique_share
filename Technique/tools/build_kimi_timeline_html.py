@@ -14,9 +14,16 @@ from bs4 import BeautifulSoup
 from markdown_it import MarkdownIt
 
 
-ROOT = Path(__file__).resolve().parents[4]
-TECHNIQUE_DIR = ROOT / "contexts/kimi_k2_7/Technique"
-DEFAULT_SOURCE = TECHNIQUE_DIR / "kimi_series_technology_timeline_20260724.md"
+def resolve_technique_dir() -> Path:
+    local_technique_dir = Path(__file__).resolve().parents[1]
+    if (local_technique_dir / "index.html").exists():
+        return local_technique_dir
+    root = Path(__file__).resolve().parents[4]
+    return root / "contexts/kimi_k2_7/Technique"
+
+
+TECHNIQUE_DIR = resolve_technique_dir()
+DEFAULT_SOURCE = TECHNIQUE_DIR / "md/kimi_series_technology_timeline_20260724.md"
 DEFAULT_OUTPUT_DIR = TECHNIQUE_DIR / "html/kimi-series-technology-timeline-2607"
 DEFAULT_ASSET_DIR = TECHNIQUE_DIR / "assets/kimi_series"
 

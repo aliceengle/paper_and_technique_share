@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>技术报告分享入口</title>
-  <meta name="description" content="Kimi 系列技术时间线、Kimi K3 核心技术与 speculative decoding 报告入口">
+  <meta name="description" content="Kimi 系列技术时间线、Kimi K3 核心技术、speculative decoding 与 DFlash 2 报告入口">
   <style>
     :root {
       --bg: #eef3f7;
@@ -198,7 +198,7 @@
     <header>
       <div class="eyebrow">Technique Share Index</div>
       <h1>技术报告分享入口</h1>
-      <p class="lead">从这里进入不同粒度的技术报告：Kimi 系列技术路线、Kimi K3 核心技术，以及 speculative decoding 与 GLM-5.2 选型。</p>
+      <p class="lead">从这里进入不同粒度的技术报告：Kimi 系列技术路线、Kimi K3 核心技术、speculative decoding 与 DFlash 2 分析。</p>
     </header>
 
     <section class="grid" aria-label="分享页列表">
@@ -251,7 +251,25 @@
         </div>
         <div class="meta">
           <span>入口：<code>html/speculative-decoding-technique-comparison-glm52-260721/</code></span>
-          <span>内容：算法演进、技术对比、测试结论、GLM-5.2 选型，含 53 个表格</span>
+          <span>内容：算法演进、技术对比、测试结论、GLM-5.2 选型，含多张表格</span>
+        </div>
+      </a>
+
+      <a class="card" href="html/dflash2-technique-analysis-report-260824/">
+        <div>
+          <div class="tag-row">
+            <span class="tag">DFlash 2</span>
+            <span class="tag">Draft</span>
+            <span class="tag">Causal</span>
+            <span class="tag">Serving</span>
+          </div>
+          <h2>DFlash 2 技术分析报告</h2>
+          <p>分析 DFlash 2 如何保持并行草稿生成，同时补足块内因果依赖，并梳理训练目标、推理流程和工程落地边界。</p>
+          <span class="open">打开报告页</span>
+        </div>
+        <div class="meta">
+          <span>入口：<code>html/dflash2-technique-analysis-report-260824/</code></span>
+          <span>内容：架构拆解、算法流程、与 Medusa/EAGLE/SpecInfer 对比、部署注意事项</span>
         </div>
       </a>
 

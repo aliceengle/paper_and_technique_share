@@ -16,7 +16,7 @@ from markdown_it import MarkdownIt
 TECHNIQUE_DIR = Path(__file__).resolve().parents[1]
 DEFAULT_SOURCE = (
     TECHNIQUE_DIR
-    / "speculative_decoding_technique_comparison_glm52_report_20260721.md"
+    / "md/speculative_decoding_technique_comparison_glm52_report_20260721.md"
 )
 DEFAULT_OUTPUT_DIR = (
     TECHNIQUE_DIR

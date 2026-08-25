@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build a cleaned Markdown and static HTML share card for the Kimi K3 core-tech report."""
+"""Build a static HTML page for the speculative decoding technique report."""
 
 from __future__ import annotations
 
@@ -15,37 +15,15 @@ from markdown_it import MarkdownIt
 
 
 TECHNIQUE_DIR = Path(__file__).resolve().parents[1]
-DEFAULT_SOURCE = TECHNIQUE_DIR / "md/kimi_k3_core_tech_kda_attnres_stable_moe_report_20260730.md"
-DEFAULT_MD_OUTPUT = TECHNIQUE_DIR / "md/kimi_k3_core_tech_share_card_20260730.md"
-DEFAULT_HTML_OUTPUT_DIR = TECHNIQUE_DIR / "html/kimi-k3-core-tech-share-card-260730"
-
-
-def slice_share_content(markdown: str) -> str:
-    lines = markdown.splitlines()
-    start = next(i for i, line in enumerate(lines) if line.strip() == "## 0. 结论速览")
-    end = next(
-        (i for i, line in enumerate(lines) if line.strip() == "## 7. 待继续验证"),
-        len(lines),
-    )
-    content = "\n".join(lines[start:end]).strip() + "\n"
-    replacements = {
-        "## 5. 对本仓库 vLLM / 推理实验的落点": "## 5. 工程落地与推理实验关注点",
-        "对本仓库来说": "对推理服务落地来说",
-        "本仓库": "推理服务实验",
-        "### 2.6 AttnRes 的收益和待验证点": "### 2.6 AttnRes 的收益和边界",
-        "待验证点": "边界",
-        "风险或待验证点": "风险或边界",
-    }
-    for src, dst in replacements.items():
-        content = content.replace(src, dst)
-    return content
+DEFAULT_SOURCE = TECHNIQUE_DIR / "md/dflash2_technique_analysis_report_20260824.md"
+DEFAULT_OUTPUT_DIR = TECHNIQUE_DIR / "html/dflash2-technique-analysis-report-260824"
 
 
 def protect_math(markdown: str) -> tuple[str, list[str]]:
     placeholders: list[str] = []
 
     def marker(index: int) -> str:
-        return f"@@KIMI_MATH_PLACEHOLDER_{index}@@"
+        return f"@@SPECDEC_MATH_PLACEHOLDER_{index}@@"
 
     def protect_segment(segment: str) -> str:
         def block_repl(match: re.Match[str]) -> str:
@@ -70,7 +48,7 @@ def protect_math(markdown: str) -> tuple[str, list[str]]:
 def restore_math(rendered: str, placeholders: list[str]) -> str:
     for idx, value in enumerate(placeholders):
         rendered = rendered.replace(
-            f"@@KIMI_MATH_PLACEHOLDER_{idx}@@",
+            f"@@SPECDEC_MATH_PLACEHOLDER_{idx}@@",
             html.escape(value, quote=False),
         )
     return rendered
@@ -89,35 +67,16 @@ def slugify(text: str, seen: set[str]) -> str:
     return slug
 
 
-def wrap_h2_cards(soup: BeautifulSoup) -> None:
-    root = soup
-    nodes = list(root.contents)
-    new_nodes = []
-    i = 0
-    while i < len(nodes):
-        node = nodes[i]
-        if getattr(node, "name", None) == "h2":
-            card = soup.new_tag("section")
-            card["class"] = "share-section-card"
-            card.append(node.extract())
-            i += 1
-            while i < len(nodes) and getattr(nodes[i], "name", None) != "h2":
-                card.append(nodes[i].extract())
-                i += 1
-            new_nodes.append(card)
-        else:
-            new_nodes.append(node)
-            i += 1
-    root.clear()
-    for node in new_nodes:
-        root.append(node)
-
-
-def rewrite_soup(body_html: str) -> tuple[str, str]:
+def rewrite_soup(body_html: str) -> tuple[str, str, str]:
     soup = BeautifulSoup(body_html, "html.parser")
+    title = "DFlash 2 技术分析报告"
+    first_h1 = soup.find("h1")
+    if first_h1:
+        title = first_h1.get_text(" ", strip=True)
+        first_h1.decompose()
+
     seen: set[str] = set()
     toc_items: list[tuple[int, str, str]] = []
-
     for heading in soup.find_all(["h2", "h3"]):
         text = heading.get_text(" ", strip=True)
         if not text:
@@ -138,21 +97,15 @@ def rewrite_soup(body_html: str) -> tuple[str, str]:
         wrapper["class"] = "table-wrap"
         table.wrap(wrapper)
 
-    for img in soup.find_all("img"):
-        img["loading"] = "lazy"
-        img["decoding"] = "async"
-
-    wrap_h2_cards(soup)
     toc_html = "\n".join(
         f'<li class="level-{level}"><a href="#{hid}">{html.escape(text)}</a></li>'
         for level, hid, text in toc_items
     )
-    return str(soup), toc_html
+    return title, str(soup), toc_html
 
 
-def render_html(article: str, toc_html: str) -> str:
-    title = "Kimi K3 核心技术分享卡：KDA、AttnRes、Stable MoE"
-    description = "聚焦 Kimi K3 的 KDA、Attention Residuals 与 Stable LatentMoE 三项核心结构技术"
+def render_html(title: str, article: str, toc_html: str) -> str:
+    description = "DFlash 2 技术分析：并行草稿、块内因果依赖、训练目标与推理部署"
     return f"""<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
@@ -170,17 +123,16 @@ def render_html(article: str, toc_html: str) -> str:
   <script defer src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
   <style>
     :root {{
-      --bg: #eef3f7;
+      --bg: #f5f7fa;
       --panel: #ffffff;
-      --panel-soft: #f7fafc;
+      --panel-soft: #f8fafc;
       --ink: #14202b;
-      --ink-2: #425160;
-      --ink-3: #7c8997;
-      --border: #dbe5ee;
-      --accent: #0f6973;
-      --accent-2: #426fb1;
-      --accent-bg: rgba(15, 105, 115, .08);
-      --warn-bg: #fff8e8;
+      --ink-2: #435260;
+      --ink-3: #7d8996;
+      --border: #dbe4ec;
+      --accent: #176f73;
+      --accent-2: #476fa8;
+      --accent-bg: rgba(23, 111, 115, .08);
       --measure: 1180px;
       --font-serif: "Source Serif 4", "Noto Sans SC", Georgia, serif;
       --font-sans: "Noto Sans SC", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
@@ -191,23 +143,17 @@ def render_html(article: str, toc_html: str) -> str:
     body {{
       margin: 0;
       color: var(--ink-2);
-      background:
-        linear-gradient(180deg, #f9fbfd 0, var(--bg) 420px),
-        var(--bg);
+      background: linear-gradient(180deg, #fbfdff 0, var(--bg) 520px), var(--bg);
       font-family: var(--font-sans);
       line-height: 1.76;
       -webkit-font-smoothing: antialiased;
     }}
-    a {{ color: var(--accent); text-decoration-color: rgba(15,105,115,.28); text-underline-offset: 3px; }}
+    a {{ color: var(--accent); text-decoration-color: rgba(23,111,115,.28); text-underline-offset: 3px; }}
     a:hover {{ text-decoration-color: var(--accent); }}
     .progress-bar {{ position: fixed; inset: 0 0 auto 0; height: 3px; z-index: 100; }}
     .progress-bar .fill {{ height: 100%; width: 0; background: linear-gradient(90deg, var(--accent), var(--accent-2)); }}
-    .page {{ max-width: var(--measure); margin: 0 auto; padding: 48px 28px 76px; }}
-    .hero {{
-      padding: 28px 0 30px;
-      border-bottom: 1px solid var(--border);
-      margin-bottom: 24px;
-    }}
+    .page {{ max-width: var(--measure); margin: 0 auto; padding: 50px 28px 76px; }}
+    .hero {{ padding: 24px 0 30px; border-bottom: 1px solid var(--border); margin-bottom: 24px; }}
     .eyebrow {{
       color: var(--accent);
       font: 600 .78rem/1.4 var(--font-mono);
@@ -216,14 +162,9 @@ def render_html(article: str, toc_html: str) -> str:
       margin-bottom: .6rem;
     }}
     h1, h2, h3, h4 {{ color: var(--ink); font-family: var(--font-serif); line-height: 1.34; }}
-    h1 {{ max-width: 900px; margin: 0 0 .9rem; font-size: clamp(2rem, 4vw, 3.4rem); font-weight: 700; }}
-    .lead {{ max-width: 820px; margin: 0; color: var(--ink-2); font-size: 1.04rem; }}
-    .topline {{
-      display: flex;
-      flex-wrap: wrap;
-      gap: 10px;
-      margin-top: 18px;
-    }}
+    h1 {{ max-width: 940px; margin: 0 0 .9rem; font-size: clamp(2rem, 4vw, 3.35rem); font-weight: 700; }}
+    .lead {{ max-width: 850px; margin: 0; color: var(--ink-2); font-size: 1.04rem; }}
+    .topline {{ display: flex; flex-wrap: wrap; gap: 10px; margin-top: 18px; }}
     .pill {{
       display: inline-flex;
       align-items: center;
@@ -235,22 +176,17 @@ def render_html(article: str, toc_html: str) -> str:
       color: var(--ink-2);
       font-size: .86rem;
     }}
-    .content-grid {{
-      display: grid;
-      grid-template-columns: minmax(0, 1fr);
-      gap: 20px;
-    }}
-    .share-section-card {{
+    .article-body {{
       background: var(--panel);
       border: 1px solid var(--border);
       border-radius: 12px;
-      padding: 24px;
-      box-shadow: 0 14px 36px rgba(20, 32, 43, .06);
+      padding: 28px;
+      box-shadow: 0 16px 40px rgba(20, 32, 43, .06);
     }}
-    .share-section-card + .share-section-card {{ margin-top: 20px; }}
-    h2 {{ margin: 0 0 1rem; padding-bottom: .6rem; border-bottom: 1px solid var(--border); font-size: 1.45rem; }}
+    h2 {{ margin: 2.7rem 0 1rem; padding-bottom: .6rem; border-bottom: 1px solid var(--border); font-size: 1.46rem; }}
+    .article-body > h2:first-child {{ margin-top: 0; }}
     h3 {{ margin: 1.8rem 0 .65rem; font-size: 1.08rem; }}
-    h4 {{ margin: 1.3rem 0 .45rem; font-size: 1rem; }}
+    h4 {{ margin: 1.25rem 0 .45rem; font-size: 1rem; }}
     p {{ margin: 0 0 1rem; }}
     blockquote {{
       margin: 1rem 0 1.2rem;
@@ -279,19 +215,18 @@ def render_html(article: str, toc_html: str) -> str:
     pre code {{ background: transparent; border: 0; color: inherit; padding: 0; }}
     ul, ol {{ padding-left: 1.35rem; margin: .35rem 0 1.15rem; }}
     li {{ margin: .2rem 0; }}
-    .table-wrap {{ overflow-x: auto; margin: 1rem 0 1.35rem; border: 1px solid var(--border); border-radius: 8px; }}
-    table {{ width: 100%; min-width: 680px; border-collapse: collapse; font-size: .91rem; }}
-    th, td {{ padding: .64rem .72rem; border-bottom: 1px solid var(--border); vertical-align: top; }}
-    th {{ background: var(--panel-soft); color: var(--ink); font-weight: 600; text-align: left; }}
-    tr:last-child td {{ border-bottom: 0; }}
-    img {{
-      display: block;
-      max-width: 100%;
-      margin: 1rem auto 1.25rem;
+    .table-wrap {{
+      overflow-x: auto;
+      margin: 1rem 0 1.35rem;
       border: 1px solid var(--border);
-      border-radius: 10px;
+      border-radius: 8px;
       background: #fff;
     }}
+    table {{ width: 100%; min-width: 760px; border-collapse: collapse; font-size: .91rem; }}
+    th, td {{ padding: .64rem .72rem; border-bottom: 1px solid var(--border); vertical-align: top; }}
+    th {{ background: var(--panel-soft); color: var(--ink); font-weight: 600; text-align: left; }}
+    tr:nth-child(even) td {{ background: #fbfcfd; }}
+    tr:last-child td {{ border-bottom: 0; }}
     .mermaid {{
       margin: 1rem 0 1.35rem;
       padding: 1rem;
@@ -299,6 +234,13 @@ def render_html(article: str, toc_html: str) -> str:
       border: 1px solid var(--border);
       border-radius: 10px;
       overflow-x: auto;
+      text-align: center;
+    }}
+    .mermaid svg {{
+      display: block;
+      max-width: 100%;
+      height: auto;
+      margin: 0 auto;
     }}
     .toc {{
       position: sticky;
@@ -311,7 +253,7 @@ def render_html(article: str, toc_html: str) -> str:
       padding: 14px;
       border: 1px solid var(--border);
       border-radius: 10px;
-      background: rgba(255, 255, 255, .88);
+      background: rgba(255, 255, 255, .9);
       backdrop-filter: blur(10px);
       font-size: .78rem;
     }}
@@ -324,14 +266,14 @@ def render_html(article: str, toc_html: str) -> str:
     @media (max-width: 720px) {{
       html {{ font-size: 16px; }}
       .page {{ padding: 32px 14px 56px; }}
-      .share-section-card {{ padding: 18px; border-radius: 10px; }}
-      table {{ min-width: 620px; }}
+      .article-body {{ padding: 18px; border-radius: 10px; }}
+      table {{ min-width: 640px; }}
     }}
     @media print {{
       .progress-bar, .toc {{ display: none !important; }}
       body {{ background: #fff; }}
       .page {{ max-width: none; padding: 0; }}
-      .share-section-card {{ box-shadow: none; break-inside: avoid; }}
+      .article-body {{ box-shadow: none; border: 0; padding: 0; }}
     }}
   </style>
 </head>
@@ -339,23 +281,23 @@ def render_html(article: str, toc_html: str) -> str:
   <div class="progress-bar"><div class="fill" id="progressFill"></div></div>
   <main class="page">
     <header class="hero">
-      <div class="eyebrow">Kimi K3 Core Tech Share Card</div>
-      <h1>Kimi K3 三项核心技术</h1>
-      <p class="lead">聚焦 KDA、Attention Residuals、Stable MoE：分别从序列长度、模型深度、专家宽度三个维度解释 K3 的结构跃迁。</p>
+      <div class="eyebrow">Speculative Decoding / GLM-5.2</div>
+      <h1>{html.escape(title)}</h1>
+      <p class="lead">{html.escape(description)}</p>
       <div class="topline">
-        <span class="pill">KDA / 1M Context</span>
-        <span class="pill">Block AttnRes</span>
-        <span class="pill">Stable LatentMoE</span>
-        <span class="pill">Quantile Balancing</span>
+        <span class="pill">DFlash 2</span>
+        <span class="pill">并行草稿生成</span>
+        <span class="pill">块内因果依赖</span>
+        <span class="pill">推理部署</span>
       </div>
     </header>
-    <nav class="toc" aria-label="分享卡目录">
+    <nav class="toc" aria-label="文章目录">
       <div class="toc-label">目录</div>
       <ul id="tocList">
         {toc_html}
       </ul>
     </nav>
-    <article class="content-grid">
+    <article class="article-body">
       {article}
     </article>
   </main>
@@ -392,44 +334,56 @@ def render_html(article: str, toc_html: str) -> str:
 """
 
 
-def copy_referenced_images(markdown: str, source_dir: Path, output_dir: Path) -> None:
-    for match in re.finditer(r"!\[[^\]]*]\(([^)]+)\)", markdown):
-        target = match.group(1)
-        if target.startswith(("http://", "https://", "data:")):
+def copy_referenced_assets(source: Path, output_dir: Path, article: str) -> None:
+    asset_root = output_dir / "assets"
+    if asset_root.exists():
+        shutil.rmtree(asset_root)
+
+    soup = BeautifulSoup(article, "html.parser")
+    for img in soup.find_all("img"):
+        src = img.get("src")
+        if not src or src.startswith(("http://", "https://", "/", "#")):
             continue
-        src = source_dir / target
-        if not src.exists():
+        clean_src = src.split("?", 1)[0].split("#", 1)[0]
+        rel_path = Path(clean_src)
+        if any(part == ".." for part in rel_path.parts):
             continue
-        dst = output_dir / target
-        dst.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(src, dst)
+        src_path = source.parent / rel_path
+        if not src_path.is_file():
+            continue
+        target_path = output_dir / rel_path
+        target_path.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(src_path, target_path)
 
 
-def build(source: Path, md_output: Path, html_output_dir: Path) -> Path:
-    share_md = slice_share_content(source.read_text(encoding="utf-8"))
-    md_output.write_text(share_md, encoding="utf-8")
-
-    protected, placeholders = protect_math(share_md)
-    rendered = MarkdownIt("default", {"html": False, "linkify": False, "typographer": False}).render(protected)
+def build(source: Path, output_dir: Path) -> Path:
+    source_text = source.read_text(encoding="utf-8")
+    protected, placeholders = protect_math(source_text)
+    rendered = MarkdownIt(
+        "default",
+        {"html": False, "linkify": False, "typographer": False},
+    ).render(protected)
     rendered = restore_math(rendered, placeholders)
-    article, toc_html = rewrite_soup(rendered)
+    title, article, toc_html = rewrite_soup(rendered)
 
-    html_output_dir.mkdir(parents=True, exist_ok=True)
-    html_path = html_output_dir / "index.html"
-    html_path.write_text(render_html(article, toc_html), encoding="utf-8")
-    copy_referenced_images(share_md, source.parent, html_output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
+    html_path = output_dir / "index.html"
+    page_html = render_html(title, article, toc_html)
+    page_html = "\n".join(line.rstrip() for line in page_html.splitlines()) + "\n"
+    html_path.write_text(page_html, encoding="utf-8")
+
+    copy_referenced_assets(source, output_dir, article)
+
     return html_path
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--source", type=Path, default=DEFAULT_SOURCE)
-    parser.add_argument("--md-output", type=Path, default=DEFAULT_MD_OUTPUT)
-    parser.add_argument("--html-output-dir", type=Path, default=DEFAULT_HTML_OUTPUT_DIR)
+    parser.add_argument("--output-dir", type=Path, default=DEFAULT_OUTPUT_DIR)
     args = parser.parse_args()
 
-    html_path = build(args.source, args.md_output, args.html_output_dir)
-    print(args.md_output)
+    html_path = build(args.source, args.output_dir)
     print(html_path)
 
 

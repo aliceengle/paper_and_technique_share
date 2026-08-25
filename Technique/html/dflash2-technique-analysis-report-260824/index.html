@@ -1,0 +1,2156 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>DFlash 2 技术分析报告：保持并行草稿，同时补足块内因果依赖</title>
+  <meta name="description" content="DFlash 2 技术分析：并行草稿、块内因果依赖、训练目标与推理部署">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Noto+Sans+SC:wght@300;400;500;600;700&family=Source+Serif+4:opsz,wght@8..60,500;8..60,600;8..60,700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.21/dist/katex.min.css">
+  <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.21/dist/katex.min.js"></script>
+  <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.21/dist/contrib/auto-render.min.js"
+    onload="renderMathInElement(document.body, {delimiters:[{left:'$$',right:'$$',display:true},{left:'$',right:'$',display:false}], throwOnError:false});"></script>
+  <script defer src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
+  <style>
+    :root {
+      --bg: #f5f7fa;
+      --panel: #ffffff;
+      --panel-soft: #f8fafc;
+      --ink: #14202b;
+      --ink-2: #435260;
+      --ink-3: #7d8996;
+      --border: #dbe4ec;
+      --accent: #176f73;
+      --accent-2: #476fa8;
+      --accent-bg: rgba(23, 111, 115, .08);
+      --measure: 1180px;
+      --font-serif: "Source Serif 4", "Noto Sans SC", Georgia, serif;
+      --font-sans: "Noto Sans SC", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      --font-mono: "IBM Plex Mono", "Noto Sans SC", monospace;
+    }
+    *, *::before, *::after { box-sizing: border-box; }
+    html { scroll-behavior: smooth; font-size: 17px; }
+    body {
+      margin: 0;
+      color: var(--ink-2);
+      background: linear-gradient(180deg, #fbfdff 0, var(--bg) 520px), var(--bg);
+      font-family: var(--font-sans);
+      line-height: 1.76;
+      -webkit-font-smoothing: antialiased;
+    }
+    a { color: var(--accent); text-decoration-color: rgba(23,111,115,.28); text-underline-offset: 3px; }
+    a:hover { text-decoration-color: var(--accent); }
+    .progress-bar { position: fixed; inset: 0 0 auto 0; height: 3px; z-index: 100; }
+    .progress-bar .fill { height: 100%; width: 0; background: linear-gradient(90deg, var(--accent), var(--accent-2)); }
+    .page { max-width: var(--measure); margin: 0 auto; padding: 50px 28px 76px; }
+    .hero { padding: 24px 0 30px; border-bottom: 1px solid var(--border); margin-bottom: 24px; }
+    .eyebrow {
+      color: var(--accent);
+      font: 600 .78rem/1.4 var(--font-mono);
+      letter-spacing: .03em;
+      text-transform: uppercase;
+      margin-bottom: .6rem;
+    }
+    h1, h2, h3, h4 { color: var(--ink); font-family: var(--font-serif); line-height: 1.34; }
+    h1 { max-width: 940px; margin: 0 0 .9rem; font-size: clamp(2rem, 4vw, 3.35rem); font-weight: 700; }
+    .lead { max-width: 850px; margin: 0; color: var(--ink-2); font-size: 1.04rem; }
+    .topline { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 18px; }
+    .pill {
+      display: inline-flex;
+      align-items: center;
+      min-height: 30px;
+      padding: 4px 10px;
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      background: var(--panel);
+      color: var(--ink-2);
+      font-size: .86rem;
+    }
+    .article-body {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 28px;
+      box-shadow: 0 16px 40px rgba(20, 32, 43, .06);
+    }
+    h2 { margin: 2.7rem 0 1rem; padding-bottom: .6rem; border-bottom: 1px solid var(--border); font-size: 1.46rem; }
+    .article-body > h2:first-child { margin-top: 0; }
+    h3 { margin: 1.8rem 0 .65rem; font-size: 1.08rem; }
+    h4 { margin: 1.25rem 0 .45rem; font-size: 1rem; }
+    p { margin: 0 0 1rem; }
+    blockquote {
+      margin: 1rem 0 1.2rem;
+      padding: .85rem 1rem;
+      border-left: 4px solid var(--accent);
+      background: var(--accent-bg);
+      border-radius: 0 8px 8px 0;
+    }
+    code {
+      font-family: var(--font-mono);
+      font-size: .86em;
+      background: #edf4f7;
+      color: #20303c;
+      border: 1px solid rgba(190,205,218,.62);
+      border-radius: 4px;
+      padding: 1px 5px;
+    }
+    pre {
+      overflow-x: auto;
+      padding: 1rem;
+      background: #101820;
+      color: #e8eef3;
+      border-radius: 8px;
+      line-height: 1.58;
+    }
+    pre code { background: transparent; border: 0; color: inherit; padding: 0; }
+    ul, ol { padding-left: 1.35rem; margin: .35rem 0 1.15rem; }
+    li { margin: .2rem 0; }
+    .table-wrap {
+      overflow-x: auto;
+      margin: 1rem 0 1.35rem;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: #fff;
+    }
+    table { width: 100%; min-width: 760px; border-collapse: collapse; font-size: .91rem; }
+    th, td { padding: .64rem .72rem; border-bottom: 1px solid var(--border); vertical-align: top; }
+    th { background: var(--panel-soft); color: var(--ink); font-weight: 600; text-align: left; }
+    tr:nth-child(even) td { background: #fbfcfd; }
+    tr:last-child td { border-bottom: 0; }
+    .mermaid {
+      margin: 1rem 0 1.35rem;
+      padding: 1rem;
+      background: var(--panel-soft);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      overflow-x: auto;
+      text-align: center;
+    }
+    .mermaid svg {
+      display: block;
+      max-width: 100%;
+      height: auto;
+      margin: 0 auto;
+    }
+    .toc {
+      position: sticky;
+      top: 18px;
+      float: right;
+      width: 250px;
+      max-height: calc(100vh - 36px);
+      overflow: auto;
+      margin: 0 -282px 20px 24px;
+      padding: 14px;
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      background: rgba(255, 255, 255, .9);
+      backdrop-filter: blur(10px);
+      font-size: .78rem;
+    }
+    .toc-label { color: var(--ink-3); font: 600 .72rem/1 var(--font-mono); margin-bottom: .6rem; }
+    .toc ul { list-style: none; margin: 0; padding: 0; }
+    .toc a { display: block; padding: .22rem 0; color: var(--ink-3); text-decoration: none; }
+    .toc li.level-3 a { padding-left: .8rem; font-size: .74rem; }
+    .toc a.active { color: var(--accent); }
+    @media (max-width: 1720px) { .toc { display: none; } }
+    @media (max-width: 720px) {
+      html { font-size: 16px; }
+      .page { padding: 32px 14px 56px; }
+      .article-body { padding: 18px; border-radius: 10px; }
+      table { min-width: 640px; }
+    }
+    @media print {
+      .progress-bar, .toc { display: none !important; }
+      body { background: #fff; }
+      .page { max-width: none; padding: 0; }
+      .article-body { box-shadow: none; border: 0; padding: 0; }
+    }
+  </style>
+</head>
+<body>
+  <div class="progress-bar"><div class="fill" id="progressFill"></div></div>
+  <main class="page">
+    <header class="hero">
+      <div class="eyebrow">Speculative Decoding / GLM-5.2</div>
+      <h1>DFlash 2 技术分析报告：保持并行草稿，同时补足块内因果依赖</h1>
+      <p class="lead">DFlash 2 技术分析：并行草稿、块内因果依赖、训练目标与推理部署</p>
+      <div class="topline">
+        <span class="pill">DFlash 2</span>
+        <span class="pill">并行草稿生成</span>
+        <span class="pill">块内因果依赖</span>
+        <span class="pill">推理部署</span>
+      </div>
+    </header>
+    <nav class="toc" aria-label="文章目录">
+      <div class="toc-label">目录</div>
+      <ul id="tocList">
+        <li class="level-2"><a href="#1-结论摘要">1. 结论摘要</a></li>
+<li class="level-2"><a href="#2-官方架构图-证据范围与版本边界">2. 官方架构图、证据范围与版本边界</a></li>
+<li class="level-3"><a href="#2-1-官方原始架构图">2.1 官方原始架构图</a></li>
+<li class="level-3"><a href="#2-2-资料来源">2.2 资料来源</a></li>
+<li class="level-3"><a href="#2-3-三类结论的标记方式">2.3 三类结论的标记方式</a></li>
+<li class="level-2"><a href="#3-提出动机">3. 提出动机</a></li>
+<li class="level-3"><a href="#3-1-投机解码的三个速度杠杆">3.1 投机解码的三个速度杠杆</a></li>
+<li class="level-3"><a href="#3-2-自回归-drafter-与-dflash-1-的矛盾">3.2 自回归 drafter 与 DFlash 1 的矛盾</a></li>
+<li class="level-3"><a href="#3-3-dflash-2-的设计目标">3.3 DFlash 2 的设计目标</a></li>
+<li class="level-3"><a href="#3-4-官方博客如何量化两个问题">3.4 官方博客如何量化两个问题</a></li>
+<li class="level-2"><a href="#4-dflash-2-整体流程">4. DFlash 2 整体流程</a></li>
+<li class="level-3"><a href="#4-1-架构图">4.1 架构图</a></li>
+<li class="level-3"><a href="#4-2-一轮-decode-的数据流">4.2 一轮 decode 的数据流</a></li>
+<li class="level-2"><a href="#5-核心机制">5. 核心机制</a></li>
+<li class="level-3"><a href="#5-1-target-context-注入与并行-mask-block">5.1 Target context 注入与并行 mask block</a></li>
+<li class="level-3"><a href="#5-2-分组动态因果短卷积">5.2 分组动态因果短卷积</a></li>
+<li class="level-3"><a href="#5-3-前驱条件候选选择器">5.3 前驱条件候选选择器</a></li>
+<li class="level-3"><a href="#5-4-为什么-有顺序依赖-仍能称为并行-drafting">5.4 为什么“有顺序依赖”仍能称为并行 drafting</a></li>
+<li class="level-3"><a href="#5-5-target-verification-与无损性">5.5 Target verification 与无损性</a></li>
+<li class="level-3"><a href="#5-6-代码实现映射">5.6 代码实现映射</a></li>
+<li class="level-2"><a href="#6-官方效果">6. 官方效果</a></li>
+<li class="level-3"><a href="#6-1-评测口径">6.1 评测口径</a></li>
+<li class="level-3"><a href="#6-2-qwen3-5-4b-matched-training-结果">6.2 Qwen3.5-4B matched-training 结果</a></li>
+<li class="level-3"><a href="#6-3-发布模型-acceptance-length-同框对比">6.3 发布模型 Acceptance length 同框对比</a></li>
+<li class="level-3"><a href="#6-4-dflash-2-吞吐与自回归相对加速">6.4 DFlash 2 吞吐与自回归相对加速</a></li>
+<li class="level-3"><a href="#6-5-动态卷积与-selector-的额外成本">6.5 动态卷积与 selector 的额外成本</a></li>
+<li class="level-2"><a href="#7-与其他投机采样模型的机制对比">7. 与其他投机采样模型的机制对比</a></li>
+<li class="level-3"><a href="#7-1-dflash-dspark-与-dflash-2-的机制演进">7.1 DFlash、DSpark 与 DFlash 2 的机制演进</a></li>
+<li class="level-3"><a href="#7-2-dspark-sequential-head-与-dflash-2-selector-的实现级区别">7.2 DSpark sequential head 与 DFlash 2 selector 的实现级区别</a></li>
+<li class="level-3"><a href="#7-3-与其他-draft-路线的机制边界">7.3 与其他 draft 路线的机制边界</a></li>
+<li class="level-3"><a href="#7-4-效果数字应该怎样比较">7.4 效果数字应该怎样比较</a></li>
+<li class="level-2"><a href="#8-公开实现与技术边界">8. 公开实现与技术边界</a></li>
+<li class="level-3"><a href="#8-1-已公开支持">8.1 已公开支持</a></li>
+<li class="level-3"><a href="#8-2-当前限制">8.2 当前限制</a></li>
+<li class="level-3"><a href="#8-3-公开代码与实现链接">8.3 公开代码与实现链接</a></li>
+<li class="level-2"><a href="#9-技术评价">9. 技术评价</a></li>
+<li class="level-2"><a href="#10-参考资料">10. 参考资料</a></li>
+      </ul>
+    </nav>
+    <article class="article-body">
+
+<blockquote>
+<p>日期：2026-08-24 CST
+代码基线：<code>z-lab/dflash</code> main commit <code>07ebd93db9f472af339b644bb70221ad8428328a</code>（2026-08-18）
+主要公开资料：Inco AI《DFlash 2: Keep Drafting Parallel》、DFlash 2 官方模型卡、DFlash 2 上游 serving 实现</p>
+</blockquote>
+<h2 id="1-结论摘要">1. 结论摘要</h2>
+<p>DFlash 2 的核心并不是把 DFlash 重新改成自回归 drafter，而是用两项低成本机制，在保留 <strong>单次 block-parallel backbone forward</strong> 的前提下补足块内依赖：</p>
+<ol>
+<li>在每个 draft Transformer 层的 Attention 和 MLP 周围加入 <strong>分组动态因果短卷积</strong>，让位置 $i$ 在一次并行 forward 内读取同一 block 中已经位于其左侧的 hidden states。</li>
+<li>每个位置先保留 target LM head 给出的 top-$K$ 候选，再用 <strong>前驱 token 条件化的候选选择器</strong>滚动出一条连贯路径；顺序依赖只存在于轻量 selector，不需要逐 token 重跑 draft backbone。</li>
+</ol>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>结论项</th>
+<th>判断</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>DFlash 2 要解决的首要问题</td>
+<td>DFlash 1 虽然 drafting 快，但各位置缺少已选前驱 token 条件，block 后段容易发生多模态组合冲突和 acceptance decay。</td>
+</tr>
+<tr>
+<td>核心设计取舍</td>
+<td>大计算继续并行；局部因果依赖由短卷积和低秩 selector 补入。</td>
+</tr>
+<tr>
+<td>是否无损</td>
+<td>是。Greedy 模式由 target top-1 验证保证结果一致；sampling 模式把真实 proposal 分布 $q$ 交给拒绝采样，保持 target 分布 $p$。</td>
+</tr>
+<tr>
+<td>官方效果</td>
+<td>单张 H200、SGLang、并发 1 下，Muse-Glimmer-30B 五任务为 <code>3.08×–4.62×</code>，Qwen3.8-27B 为 <code>2.67×–3.43×</code>；并发 32 时仍分别为 <code>1.15×–1.68×</code> 与 <code>1.01×–1.45×</code>。</td>
+</tr>
+<tr>
+<td>相对 DFlash 1 / DSpark / MTP</td>
+<td>在两张官方模型卡的同框测试中，DFlash 2 的 acceptance length 和吞吐均为表内最高；该结论只适用于对应 checkpoint、模型、采样参数和 H200/SGLang 口径。</td>
+</tr>
+<tr>
+<td>额外成本</td>
+<td>vLLM 的 Qwen3.8 profiler 中，动态卷积加 selector 占完整 serving step 的 <code>0.67%–0.84%</code>；SGLang 的 Muse 增量测试估算净成本为 <code>1.5%–2.7%</code>。</td>
+</tr>
+<tr>
+<td>当前工程成熟度</td>
+<td>Transformers、MLX 和 OpenAI-compatible server 路径已在本仓库公开；SGLang 与 vLLM PR 已合并，llama.cpp PR 截至本报告日期仍为 open。</td>
+</tr>
+</tbody>
+</table></div>
+<p>一句话概括：<strong>DFlash 1 证明“整块并行草稿可以很快”，DFlash 2 进一步证明“块内依赖不一定要靠昂贵的逐 token backbone rollout 才能补回来”。</strong></p>
+<h2 id="2-官方架构图-证据范围与版本边界">2. 官方架构图、证据范围与版本边界</h2>
+<h3 id="2-1-官方原始架构图">2.1 官方原始架构图</h3>
+<p><img alt="DFlash 2 官方架构图" src="assets/dflash2_official_architecture.png"/></p>
+<blockquote>
+<p>原图来自 <a href="https://huggingface.co/z-lab/Muse-Glimmer-30B-DFlash2/blob/main/assets/dflash2-figure.png">DFlash 2 官方模型卡</a>，本报告按原始分辨率保留，未重绘或裁切。图中上半部分是带动态短卷积的五层 DFlash backbone，下半部分是从各位置 top-16 候选中滚动选择路径的 selector。</p>
+</blockquote>
+<h3 id="2-2-资料来源">2.2 资料来源</h3>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>类型</th>
+<th>资料</th>
+<th>本报告用途</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>官方博客</td>
+<td><a href="https://inco.ai/blog/dflash2/">DFlash 2: Keep Drafting Parallel</a></td>
+<td>技术定位、动机、消融和命名。本机直连受 TLS 出口限制，已通过 141 只读获取全文，并用同团队模型卡和已合并 PR 交叉核验数字。</td>
+</tr>
+<tr>
+<td>本地代码</td>
+<td><a href="../../dflash/README.md">DFlash README</a>、<a href="../../dflash/dflash/model.py">PyTorch model.py</a>、<a href="../../dflash/dflash/model_mlx.py">MLX model_mlx.py</a></td>
+<td>生成循环、动态卷积、selector、cache 裁剪、greedy/sampling 验证。</td>
+</tr>
+<tr>
+<td>官方模型卡</td>
+<td><a href="https://huggingface.co/incoai/Muse-Glimmer-30B-DFlash2">Inco AI Muse-Glimmer-30B-DFlash2</a>、<a href="https://huggingface.co/incoai/Qwen3.8-27B-DFlash2">Inco AI Qwen3.8-27B-DFlash2</a></td>
+<td>checkpoint 配置、评测条件、acceptance length 和完整吞吐表。</td>
+</tr>
+<tr>
+<td>官方镜像</td>
+<td><a href="https://huggingface.co/z-lab/Muse-Glimmer-30B-DFlash2">z-lab Muse 模型卡</a>、<a href="https://huggingface.co/z-lab/Qwen3.8-27B-DFlash2">z-lab Qwen 模型卡</a></td>
+<td>与 Inco AI 主模型卡交叉验证；正文和评测表一致。</td>
+</tr>
+<tr>
+<td>Serving 实现</td>
+<td><a href="https://github.com/sgl-project/sglang/pull/35371">SGLang PR #35371</a>、<a href="https://github.com/vllm-project/vllm/pull/52816">vLLM PR #52816</a>、<a href="https://github.com/ggml-org/llama.cpp/pull/27342">llama.cpp PR #27342</a></td>
+<td>production kernel、组件成本、集成状态和补充 benchmark。</td>
+</tr>
+<tr>
+<td>对比资料</td>
+<td><a href="https://arxiv.org/abs/2602.06036">DFlash 论文</a>、<a href="../../DeepSpec/DSpark_paper.pdf">本地 DSpark 论文</a>、<a href="https://arxiv.org/abs/2401.10774">Medusa</a>、<a href="https://arxiv.org/abs/2503.01840">EAGLE-3</a>、<a href="https://arxiv.org/abs/2607.25852">AngelSpec</a></td>
+<td>比较各类 drafter 的条件依赖方式、draft latency、验证调度和公开效果。</td>
+</tr>
+</tbody>
+</table></div>
+<h3 id="2-3-三类结论的标记方式">2.3 三类结论的标记方式</h3>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>标记</th>
+<th>含义</th>
+<th>示例</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>代码事实</td>
+<td>可以从冻结 commit 的实现直接读出。</td>
+<td><code>DFlash2DraftModel</code> 给每个 draft layer 同时挂接 <code>attention_conv</code> 和 <code>mlp_conv</code>。</td>
+</tr>
+<tr>
+<td>官方结果</td>
+<td>来自 Inco AI/z-lab 模型卡或上游合并 PR，保留原测试条件。</td>
+<td>单 H200、并发 1、Muse MATH-500 为 <code>295.5 output tok/s</code>、<code>4.62×</code>。</td>
+</tr>
+<tr>
+<td>分析判断</td>
+<td>基于代码和结果进行的工程解释，不冒充论文原文。</td>
+<td>DFlash 2 更适合“需要较长 proposal，但不希望 draft backbone 串行增长”的场景。</td>
+</tr>
+</tbody>
+</table></div>
+<p>本文不会把不同 target、硬件、量化、并发和 sampling 配置下的 headline speedup 直接排成统一榜单。</p>
+<h2 id="3-提出动机">3. 提出动机</h2>
+<p>官方博客先从 agent workload 出发：agent 会长时间阅读、规划并调用工具，生成 token 的规模显著高于传统聊天，decode 因而成为持续成本。DFlash 1 已把 drafter 从逐 token 生成改成一次 block-parallel forward；DFlash 2 关注的是下一层瓶颈——如何在不放弃这一并行优势的情况下，让每次 target verification 推进更多 token。</p>
+<h3 id="3-1-投机解码的三个速度杠杆">3.1 投机解码的三个速度杠杆</h3>
+<p>将一次 speculative cycle 的平均单 token 时延近似写成：</p>
+<p>$$
+L_{token}\approx\frac{T_{draft}+T_{verify}+T_{schedule}}{\tau}
+$$</p>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>符号</th>
+<th>含义</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>$T_{draft}$</td>
+<td>生成 proposal block 的耗时。</td>
+</tr>
+<tr>
+<td>$T_{verify}$</td>
+<td>target 并行验证 proposal 的耗时。</td>
+</tr>
+<tr>
+<td>$T_{schedule}$</td>
+<td>候选组织、采样、cache 维护和调度等额外开销。</td>
+</tr>
+<tr>
+<td>$\tau$</td>
+<td>每次 target verification 实际推进的平均 token 数，通常包含至少一个 target bonus token。</td>
+</tr>
+</tbody>
+</table></div>
+<p>因此，真正的加速需要同时做到：draft 足够快、proposal 足够准、验证与调度不过度浪费。</p>
+<h3 id="3-2-自回归-drafter-与-dflash-1-的矛盾">3.2 自回归 drafter 与 DFlash 1 的矛盾</h3>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>路线</th>
+<th>优势</th>
+<th>核心代价</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>小模型 / EAGLE 类自回归 drafter</td>
+<td>第 $i$ 个 proposal 明确依赖已选择的 $d_{1:i-1}$，路径连贯性强。</td>
+<td>生成 $\gamma$ 个 token 通常需要 $\gamma$ 次轻量 rollout，$T_{draft}$ 随 block 长度增长。</td>
+</tr>
+<tr>
+<td>DFlash 1 block-parallel drafter</td>
+<td>大部分 drafting 只需一次 backbone forward，长 block 的 latency 上限更好。</td>
+<td>同一 block 内各位置主要从共享 target context 和 mask 表示并行预测，不直接条件化于最终选择的前驱 token。</td>
+</tr>
+</tbody>
+</table></div>
+<p>DFlash 1 的问题不是单个位置完全没有上下文，而是 <strong>没有看到当前这条候选路径上已经选中的前驱 token</strong>。当上下文同时允许多条合理续写，例如 <code>of course</code> 和 <code>no problem</code>，独立位置预测可能组合成 <code>of problem</code>。第一个不一致位置会使后续 proposal 全部失效，block 越长，suffix decay 越明显。</p>
+<h3 id="3-3-dflash-2-的设计目标">3.3 DFlash 2 的设计目标</h3>
+<p>DFlash 2 将问题拆成两个层次：</p>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>层次</th>
+<th>目标</th>
+<th>方案</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>hidden 表示层</td>
+<td>让后位置在一次并行 backbone 内看到左侧局部表示。</td>
+<td>分组动态因果短卷积。</td>
+</tr>
+<tr>
+<td>token 路径层</td>
+<td>避免每个位置独立 argmax 导致组合冲突。</td>
+<td>每位置 top-$K$ 候选加前驱条件 selector。</td>
+</tr>
+<tr>
+<td>正确性层</td>
+<td>proposal 更强，但最终分布仍由 target 决定。</td>
+<td>target 并行验证和标准拒绝采样校正。</td>
+</tr>
+</tbody>
+</table></div>
+<p>这就是标题 “Keep Drafting Parallel” 的准确含义：<strong>保留重计算的并行性，只让很轻的路径选择带有顺序依赖。</strong></p>
+<h3 id="3-4-官方博客如何量化两个问题">3.4 官方博客如何量化两个问题</h3>
+<p>博客先在五层 Qwen3-4B DFlash、GSM8K 上测量“正确 token 是否已在候选列表中”。下表中的位置指标以此前所有位置均正确为条件，acceptance length 包含 verifier 的下一个 token：</p>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>Metric</th>
+<th style="text-align:right">位置 0</th>
+<th style="text-align:right">位置 1</th>
+<th style="text-align:right">位置 2</th>
+<th style="text-align:right">位置 3</th>
+<th style="text-align:right">位置 4</th>
+<th style="text-align:right">位置 5</th>
+<th style="text-align:right">位置 6</th>
+<th style="text-align:right">Acceptance length</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Recall@1</td>
+<td style="text-align:right">85.4%</td>
+<td style="text-align:right">80.3%</td>
+<td style="text-align:right">79.4%</td>
+<td style="text-align:right">78.3%</td>
+<td style="text-align:right">77.5%</td>
+<td style="text-align:right">75.9%</td>
+<td style="text-align:right">72.9%</td>
+<td style="text-align:right">4.27</td>
+</tr>
+<tr>
+<td>Recall@16</td>
+<td style="text-align:right">99.5%</td>
+<td style="text-align:right">97.3%</td>
+<td style="text-align:right">94.8%</td>
+<td style="text-align:right">92.6%</td>
+<td style="text-align:right">90.8%</td>
+<td style="text-align:right">89.4%</td>
+<td style="text-align:right">87.8%</td>
+<td style="text-align:right">6.79</td>
+</tr>
+</tbody>
+</table></div>
+<p>这组数据揭示了两个不同问题：</p>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>现象</th>
+<th>说明</th>
+<th>对应 DFlash 2 模块</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Recall@16 远高于 Recall@1</td>
+<td>正确 token 通常已经在 DFlash 候选集中，存在很大的 selection headroom；不必重写完整词表分布。</td>
+<td>Candidate selector。</td>
+</tr>
+<tr>
+<td>Recall@16 也从 99.5% 降到 87.8%</td>
+<td>即使有 oracle selector，block 后段候选集合本身仍在退化，选择器无法补回不存在的正确候选。</td>
+<td>Dynamic causal convolution。</td>
+</tr>
+</tbody>
+</table></div>
+<p>因此，DFlash 2 不是用一个模块同时模糊处理所有问题：selector 解决“候选在，但没选对”，convolution 解决“后段候选质量本身下降”。</p>
+<h2 id="4-dflash-2-整体流程">4. DFlash 2 整体流程</h2>
+<h3 id="4-1-架构图">4.1 架构图</h3>
+<div class="mermaid">flowchart LR
+    subgraph Draft["DFlash 2 草稿侧"]
+        direction TB
+        A["Target 多层 hidden&lt;br/&gt;Anchor 与 mask block"]
+        B["五层并行 DFlash backbone&lt;br/&gt;Attention／MLP 动态因果短卷积"]
+        C["共享 Target LM head&lt;br/&gt;各位置 top-16 加前驱条件 selector"]
+        A --&gt; B --&gt; C
+    end
+
+    subgraph Verify["Target 验证侧"]
+        direction TB
+        D["一次 block verification"]
+        E{"Greedy 接受&lt;br/&gt;或拒绝采样校正"}
+        F["接受前缀&lt;br/&gt;bonus 或校正 token"]
+        G["裁剪 cache&lt;br/&gt;输出下一轮 target hidden"]
+        D --&gt; E --&gt; F --&gt; G
+    end
+
+    C --&gt;|"Proposal path 与分布 q"| D
+    G -.-&gt;|"下一轮反馈"| A
+
+    classDef context fill:#EAF3FF,stroke:#3274D9,color:#102A43,stroke-width:1.5px;
+    classDef core fill:#EAF8F0,stroke:#16A36A,color:#12372A,stroke-width:1.5px;
+    classDef select fill:#FFF4E5,stroke:#E78B22,color:#4A2A00,stroke-width:1.5px;
+    classDef verify fill:#F3EEFF,stroke:#7857D8,color:#2E1A66,stroke-width:1.5px;
+    class A context;
+    class B core;
+    class C select;
+    class D,E,F,G verify;
+</div>
+<h3 id="4-2-一轮-decode-的数据流">4.2 一轮 decode 的数据流</h3>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>阶段</th>
+<th>输入</th>
+<th>主要计算</th>
+<th>输出</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Target 上下文</td>
+<td>已确认 token 与 KV cache</td>
+<td>Prefill 或上一轮验证，并抽取指定层 hidden</td>
+<td>多层 target features 与 anchor。</td>
+</tr>
+<tr>
+<td>并行 backbone</td>
+<td>Target features 与整块 mask slots</td>
+<td>五层 draft Transformer；每层 Attention、MLP 前后各经过动态短卷积</td>
+<td>所有 draft 位置的 hidden，一次 forward 完成。</td>
+</tr>
+<tr>
+<td>Candidate selector</td>
+<td>各位置 hidden 与共享 LM head logits</td>
+<td>先并行求 top-16，再用前驱 token 逐位置走出一条路径</td>
+<td>Proposal block；sampling 时同时输出稀疏 proposal 分布 $q$。</td>
+</tr>
+<tr>
+<td>Target verification</td>
+<td>Proposal block</td>
+<td>Target 一次 block forward，执行 greedy prefix match 或 rejection sampling</td>
+<td>接受前缀、bonus 或校正 token、新 hidden 和 cache 边界。</td>
+</tr>
+</tbody>
+</table></div>
+<p>这里的“并行 drafting”指 draft backbone 不按 proposal token 数重复执行。selector 的最终 path walk 确实按位置传递 predecessor token，但它只处理 $K=16$、rank 256 的低秩分数；SGLang/vLLM 将其放进每个请求一个 Triton program，不为每个位置重跑 backbone，也不为每个位置启动独立 kernel。</p>
+<h2 id="5-核心机制">5. 核心机制</h2>
+<h3 id="5-1-target-context-注入与并行-mask-block">5.1 Target context 注入与并行 mask block</h3>
+<p>代码先从 target 的指定层抽取 hidden states，并融合为 drafter context：</p>
+<p>$$
+H_{ctx}=\operatorname{RMSNorm}\left(W_c[H^{(l_1)};\ldots;H^{(l_m)}]\right)
+$$</p>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>符号</th>
+<th>含义</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>$H^{(l_j)}$</td>
+<td>target 第 $l_j$ 层的 hidden states。</td>
+</tr>
+<tr>
+<td>$W_c$</td>
+<td>把多层拼接特征投影回 draft hidden size 的线性层。</td>
+</tr>
+<tr>
+<td>$H_{ctx}$</td>
+<td>每一层 draft attention 可读取的 target 上下文。</td>
+</tr>
+</tbody>
+</table></div>
+<p>公开 checkpoint 都是 5 层 drafter：</p>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>配置项</th>
+<th style="text-align:right">Muse-Glimmer-30B-DFlash2</th>
+<th style="text-align:right">Qwen3.8-27B-DFlash2</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Draft layers</td>
+<td style="text-align:right">5</td>
+<td style="text-align:right">5</td>
+</tr>
+<tr>
+<td>Block size</td>
+<td style="text-align:right">16</td>
+<td style="text-align:right">8</td>
+</tr>
+<tr>
+<td>每轮 draft token 数</td>
+<td style="text-align:right">15</td>
+<td style="text-align:right">7</td>
+</tr>
+<tr>
+<td>Target layer IDs</td>
+<td style="text-align:right"><code>1, 13, 25, 37, 49</code></td>
+<td style="text-align:right"><code>5, 19, 33, 47, 61</code></td>
+</tr>
+<tr>
+<td>Dynamic convolution kernel</td>
+<td style="text-align:right">2</td>
+<td style="text-align:right">2</td>
+</tr>
+<tr>
+<td>Convolution group size</td>
+<td style="text-align:right">16</td>
+<td style="text-align:right">16</td>
+</tr>
+<tr>
+<td>Selector rank</td>
+<td style="text-align:right">256</td>
+<td style="text-align:right">256</td>
+</tr>
+<tr>
+<td>Selector top-$K$</td>
+<td style="text-align:right">16</td>
+<td style="text-align:right">16</td>
+</tr>
+</tbody>
+</table></div>
+<p>需要特别说明：本地 <code>dflash_generate</code> 每轮只调用一次 draft model forward。这里的 block diffusion 是“以 mask block 为输入做整块并行预测”的建模方式，不表示推理时要执行多轮昂贵的逐步扩散去噪。</p>
+<h3 id="5-2-分组动态因果短卷积">5.2 分组动态因果短卷积</h3>
+<p>对一个 <code>GroupedDynamicCausalConv</code> 实例，设其 <code>prepare</code> 输入为
+$U\in\mathbb{R}^{B\times L\times D}$。先由无偏置线性层生成两条分支的动态修正：</p>
+<p>$$
+\Delta
+=
+\operatorname{reshape}\!\left(UW_{proj}^{\mathsf T}\right)
+\in\mathbb{R}^{B\times L\times 2\times k\times G},
+\qquad
+W_{proj}\in\mathbb{R}^{2kG\times D},
+\qquad
+G=\frac{D}{S}
+$$</p>
+<p>定义分支 $r\in\{0,1\}$ 的分组动态因果卷积算子：</p>
+<p>$$
+\boxed{
+\left[\mathcal C_r\!\left(Z;\Delta\right)\right]_{b,i,g,s}
+=
+\sum_{t=0}^{k-1}
+\left(
+\beta_{r,t,g,s}
++
+\Delta_{b,i,r,t,g}
+\right)
+Z_{b,i-t,g,s}
+}
+$$</p>
+<p>$$
+Z_{b,j,g,s}=0\qquad\text{if }j&lt;0
+$$</p>
+<p>同一个卷积实例对一个 Attention 或 MLP 子层 $F$ 的完整包裹为：</p>
+<p>$$
+\widetilde U=\mathcal C_0\!\left(U;\Delta\right),
+\qquad
+V=F\!\left(\widetilde U\right),
+\qquad
+\widetilde V=\mathcal C_1\!\left(V;\Delta\right)
+$$</p>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>符号</th>
+<th>含义</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>$B,L,D$</td>
+<td>Batch、卷积序列长度和 hidden size。</td>
+</tr>
+<tr>
+<td>$S$</td>
+<td>每组 channel 数；公开配置为 16。</td>
+</tr>
+<tr>
+<td>$G=D/S$</td>
+<td>Channel group 数。</td>
+</tr>
+<tr>
+<td>$r$</td>
+<td>卷积分支；$r=0$ 为 prepare，$r=1$ 为 finish。</td>
+</tr>
+<tr>
+<td>$b,i$</td>
+<td>Batch 索引和 block 内位置索引。</td>
+</tr>
+<tr>
+<td>$g,s$</td>
+<td>Channel group 索引和组内 channel 索引；原 channel 为 $c=gS+s$。</td>
+</tr>
+<tr>
+<td>$t$</td>
+<td>向左查看的 offset；公开配置 $k=2$，因此 $t\in\{0,1\}$。</td>
+</tr>
+<tr>
+<td>$\beta_{r,t,g,s}$</td>
+<td><code>base_kernel</code> 中按分支、offset、channel 取出的静态标量。</td>
+</tr>
+<tr>
+<td>$\Delta_{b,i,r,t,g}$</td>
+<td><code>kernel_projection</code> 根据位置 $i$ 的输入生成的动态标量，在组内 $S$ 个 channel 间共享。</td>
+</tr>
+</tbody>
+</table></div>
+<p>简略地说，$\beta$ 是每个 channel 的默认局部混合权重，$\Delta$ 是根据当前输入生成的上下文相关修正；二者在索引后都是标量。Prepare 使用分支 0 先混合子层输入，finish 使用 prepare 时已经生成并缓存的分支 1 再混合子层输出。</p>
+<h4>5.2.1 张量如何组织</h4>
+<p>Qwen3.8-27B-DFlash2 的公开配置为：</p>
+<p>$$
+D=5120,\qquad S=16,\qquad G=\frac{5120}{16}=320,
+\qquad k=2
+$$</p>
+<p>正常一轮使用 block size 8，因此卷积输入的 $L=8$ 包含 1 个已验证 anchor 和 7 个 mask slots。$B$ 保留为运行时 batch size。</p>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>张量或参数</th>
+<th>通用形状</th>
+<th>Qwen3.8 实际形状</th>
+<th>作用</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Prepare 输入 $U$</td>
+<td>$[B,L,D]$</td>
+<td>$[B,8,5120]$</td>
+<td>当前子层经过 LayerNorm 后的 hidden。</td>
+</tr>
+<tr>
+<td>分组输入</td>
+<td>$[B,L,G,S]$</td>
+<td>$[B,8,320,16]$</td>
+<td>把 5120 个 channel 重排为 320 组，每组 16 个；元素总数不变。</td>
+</tr>
+<tr>
+<td><code>base_kernel</code></td>
+<td>$[2,k,D]$</td>
+<td>$[2,2,5120]$</td>
+<td>两个分支、两个 offset、每个 channel 一份静态基础权重。</td>
+</tr>
+<tr>
+<td><code>kernel_projection.weight</code></td>
+<td>$[2kG,D]$</td>
+<td>$[1280,5120]$</td>
+<td>把每个位置的 5120 维 hidden 映射成动态修正系数。</td>
+</tr>
+<tr>
+<td>Projection 输出</td>
+<td>$[B,L,2kG]$</td>
+<td>$[B,8,1280]$</td>
+<td>尚未拆分分支、offset 和 group。</td>
+</tr>
+<tr>
+<td>动态核重排 $\Delta$</td>
+<td>$[B,L,2,k,G]$</td>
+<td>$[B,8,2,2,320]$</td>
+<td>两个分支、两个 offset、320 个 group 的动态修正。</td>
+</tr>
+<tr>
+<td>单个分支/offset 的基础核</td>
+<td>$[1,1,G,S]$</td>
+<td>$[1,1,320,16]$</td>
+<td>由 <code>base[offset]</code> reshape 得到。</td>
+</tr>
+<tr>
+<td>单个分支/offset 的动态修正</td>
+<td>$[B,L,G,1]$</td>
+<td>$[B,8,320,1]$</td>
+<td>最后一维为 1，表示组内 16 个 channel 共用一个修正。</td>
+</tr>
+<tr>
+<td>广播后的有效权重</td>
+<td>$[B,L,G,S]$</td>
+<td>$[B,8,320,16]$</td>
+<td>基础核和动态修正广播相加后的逐位置、逐 channel 权重。</td>
+</tr>
+<tr>
+<td>卷积输出</td>
+<td>$[B,L,D]$</td>
+<td>$[B,8,5120]$</td>
+<td>分组结果 reshape 回原 hidden 形状。</td>
+</tr>
+</tbody>
+</table></div>
+<p>对固定的分支 $r$ 和 offset $t$，张量级相加实际是：</p>
+<p>$$
+\underbrace{[1,1,G,S]}_{\text{base}}
++
+\underbrace{[B,L,G,1]}_{\text{dynamic}}
+\xrightarrow{\text{broadcast}}
+\underbrace{[B,L,G,S]}_{\text{effective kernel}}
+$$</p>
+<p>在 Qwen3.8 中就是：</p>
+<p>$$
+[1,1,320,16]+[B,8,320,1]\rightarrow[B,8,320,16]
+$$</p>
+<p><code>base</code> 沿 batch 和位置维广播，<code>dynamic</code> 沿组内 16 个 channel 广播。因此完整张量 shape 虽然不同，但公式中的 $\beta_{r,t,g,s}$ 与 $\Delta_{b,i,r,t,g}$ 在完成索引后都是标量。</p>
+<h4>5.2.2 prepare 与 finish 如何包裹子层</h4>
+<p>下面给出 Qwen3.8-27B-DFlash2 <strong>单个 <code>Qwen3DFlashDecoderLayer</code></strong> 的完整数据流。其 hidden size 为 5120，正常 block 长度为 8；图中所有主干 hidden 的 shape 均保持 $[B,8,5120]$。</p>
+<div class="mermaid">flowchart TB
+    X0["Layer 输入 X0；B × 8 × 5120"] --&gt; RA["保存 Attention residual"]
+    X0 --&gt; LN1["Input RMSNorm"]
+    LN1 --&gt; UA["Attention 归一化输入 UA；B × 8 × 5120"]
+
+    subgraph ASTAGE["Attention 子层"]
+        direction TB
+        subgraph ACONV["attention_conv：独立卷积实例"]
+            direction LR
+            UA --&gt; AKP["attention_conv.kernel_projection；5120 → 1280"]
+            AKP --&gt; AD["reshape 动态修正 ΔA；B × 8 × 2 × 2 × 320"]
+            AD --&gt; AD0["分支 0：prepare；B × 8 × 2 × 320"]
+            AD --&gt; AD1["分支 1：finish 缓存；B × 8 × 2 × 320"]
+            UA --&gt; AP["prepare 卷积 C0；输出 B × 8 × 5120"]
+            AB0["attention_conv.base_kernel 0；2 × 5120"] --&gt; AP
+            AD0 --&gt; AP
+        end
+        AP --&gt; ATTN["Self Attention；读取 target context"]
+        ATTN --&gt; AF["finish 卷积 C1；输出 B × 8 × 5120"]
+        AB1["attention_conv.base_kernel 1；2 × 5120"] --&gt; AF
+        AD1 --&gt; AF
+    end
+
+    AF --&gt; ADD1["Residual Add"]
+    RA --&gt; ADD1
+    ADD1 --&gt; X1["Attention 后 hidden X1；B × 8 × 5120"]
+    X1 --&gt; RM["保存 MLP residual"]
+    X1 --&gt; LN2["Post-Attention RMSNorm"]
+    LN2 --&gt; UM["MLP 归一化输入 UM；B × 8 × 5120"]
+
+    subgraph MSTAGE["MLP 子层"]
+        direction TB
+        subgraph MCONV["mlp_conv：另一套独立卷积参数"]
+            direction LR
+            UM --&gt; MKP["mlp_conv.kernel_projection；5120 → 1280"]
+            MKP --&gt; MD["reshape 动态修正 ΔM；B × 8 × 2 × 2 × 320"]
+            MD --&gt; MD0["分支 0：prepare；B × 8 × 2 × 320"]
+            MD --&gt; MD1["分支 1：finish 缓存；B × 8 × 2 × 320"]
+            UM --&gt; MP["prepare 卷积 C0；输出 B × 8 × 5120"]
+            MB0["mlp_conv.base_kernel 0；2 × 5120"] --&gt; MP
+            MD0 --&gt; MP
+        end
+        MP --&gt; MLP["Qwen3 MLP"]
+        MLP --&gt; MF["finish 卷积 C1；输出 B × 8 × 5120"]
+        MB1["mlp_conv.base_kernel 1；2 × 5120"] --&gt; MF
+        MD1 --&gt; MF
+    end
+
+    MF --&gt; ADD2["Residual Add"]
+    RM --&gt; ADD2
+    ADD2 --&gt; X2["Layer 输出 X2；B × 8 × 5120"]
+    X2 --&gt; NEXT["进入下一 Draft Layer；总计 5 层"]
+
+    classDef context fill:#EAF3FF,stroke:#3274D9,color:#102A43,stroke-width:1.5px;
+    classDef core fill:#EAF8F0,stroke:#16A36A,color:#12372A,stroke-width:1.5px;
+    classDef select fill:#FFF4E5,stroke:#E78B22,color:#4A2A00,stroke-width:1.5px;
+    classDef verify fill:#F3EEFF,stroke:#7857D8,color:#2E1A66,stroke-width:1.5px;
+    class X0,LN1,UA,LN2,UM,X1,X2,NEXT context;
+    class AP,ATTN,AF,MP,MLP,MF core;
+    class AKP,AD,AD0,AD1,AB0,AB1,MKP,MD,MD0,MD1,MB0,MB1 select;
+    class RA,RM,ADD1,ADD2 verify;
+</div>
+<p>完整调用顺序如下：</p>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th style="text-align:right">步骤</th>
+<th>Attention 路径</th>
+<th>MLP 路径</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align:right">1</td>
+<td>保存 layer 输入 $X_0$ 作为 residual，再执行 <code>input_layernorm</code> 得到 $U_A$。</td>
+<td>保存 Attention 残差相加后的 $X_1$，再执行 <code>post_attention_layernorm</code> 得到 $U_M$。</td>
+</tr>
+<tr>
+<td style="text-align:right">2</td>
+<td><code>attention_conv.prepare(U_A)</code> 只执行一次 <code>kernel_projection</code>，产生 $\Delta_A[B,8,2,2,320]$。</td>
+<td><code>mlp_conv.prepare(U_M)</code> 使用另一套投影参数，产生 $\Delta_M[B,8,2,2,320]$。</td>
+</tr>
+<tr>
+<td style="text-align:right">3</td>
+<td>分支 0 与 <code>attention_conv.base_kernel[0]</code> 卷积 $U_A$，结果送入 Attention；分支 1 被缓存。</td>
+<td>分支 0 与 <code>mlp_conv.base_kernel[0]</code> 卷积 $U_M$，结果送入 MLP；分支 1 被缓存。</td>
+</tr>
+<tr>
+<td style="text-align:right">4</td>
+<td>Attention 输出进入 <code>attention_conv.finish</code>，使用 <code>attention_conv.base_kernel[1]</code> 和缓存的 $\Delta_{A,1}$；<strong>不重新运行 projection</strong>。</td>
+<td>MLP 输出进入 <code>mlp_conv.finish</code>，使用 <code>mlp_conv.base_kernel[1]</code> 和缓存的 $\Delta_{M,1}$；<strong>不重新运行 projection</strong>。</td>
+</tr>
+<tr>
+<td style="text-align:right">5</td>
+<td>Finish 输出与 $X_0$ 做 residual add，得到 $X_1$。</td>
+<td>Finish 输出与 $X_1$ 做 residual add，得到当前 layer 输出 $X_2$。</td>
+</tr>
+</tbody>
+</table></div>
+<p>需要区分两个层次：</p>
+<ul>
+<li><code>attention_conv</code> 和 <code>mlp_conv</code> 是 <strong>两个独立的 <code>GroupedDynamicCausalConv</code> 实例</strong>，各自拥有一套 <code>base_kernel[2,2,5120]</code> 和 <code>kernel_projection.weight[1280,5120]</code>。</li>
+<li>每个实例内部的第一个维度 2 才是 <strong>prepare/finish 两条分支</strong>；它不是 Attention/MLP 的编号。</li>
+<li>Qwen3.8 drafter 有 5 个 decoder layers，因此一共存在 10 个动态卷积实例。每个实例在一次 layer forward 中只做一次动态核投影，但执行 prepare 和 finish 两次长度为 2 的分组因果卷积。</li>
+</ul>
+<p>该设计有四个关键点：</p>
+<ol>
+<li>只读当前位置及左侧位置，block 边界外补零，因此保持因果性。</li>
+<li>动态核随输入变化，比固定 depthwise convolution 更能适应当前上下文。</li>
+<li>group 内共享动态系数，避免为每个 channel 生成完整动态核。</li>
+<li>每层 Attention 和 MLP 都有 prepare/finish 两次短卷积路径，依赖注入不只发生在最终 logits。</li>
+</ol>
+<p>它补的是 <strong>hidden-space 局部依赖</strong>。即便 selector 尚未运行，后位置的表示已经不再是完全独立的 mask-slot 表示。</p>
+<p>实现序列还包含已验证 anchor：第一个 drafted position 可读取最后一个已验证 token 的表示，后续 drafted position 读取各自左邻。这里的边界补零发生在 anchor 之前，而不是把第一个 proposal 与 anchor 隔开。</p>
+<p>博客的 matched ablation 说明为什么选择短卷积而不是简单加深 drafter：</p>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>方案</th>
+<th style="text-align:right">参数增量</th>
+<th style="text-align:right">Draft–verify cycle latency 增量</th>
+<th>观察</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>五层 DFlash 加 convolution</td>
+<td style="text-align:right"><code>+16.5M</code>，约 <code>+3%</code></td>
+<td style="text-align:right"><code>+0.7%</code></td>
+<td>后段 Recall@1 接近十五层 DFlash。</td>
+</tr>
+<tr>
+<td>五层扩到十五层 DFlash</td>
+<td style="text-align:right">Drafter 约 <code>3×</code> 参数</td>
+<td style="text-align:right"><code>+15.2%</code></td>
+<td>后段更好，但大量容量也花在早段，破坏轻量性。</td>
+</tr>
+</tbody>
+</table></div>
+<h4>5.2.3 参数量边界</h4>
+<p>单个动态卷积包含两条长度为 $k$ 的静态核，以及一个 $D\rightarrow 2kG$ 的无偏置投影：</p>
+<p>$$
+P_{conv}=2kD+D\left(2kG\right),\qquad G=\frac{D}{S}
+$$</p>
+<p>每层对 Attention 和 MLP 各放一个卷积，因此 $L_d$ 层的卷积总参数为：</p>
+<p>$$
+P_{conv,total}=2L_d\left(2kD+2kDG\right)
+$$</p>
+<p>按公开 checkpoint 的 safetensors header 直接统计：</p>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>Checkpoint</th>
+<th style="text-align:right">$D$</th>
+<th style="text-align:right">$L_d$</th>
+<th>单个 <code>base_kernel</code></th>
+<th>单个 <code>kernel_projection.weight</code></th>
+<th style="text-align:right">全部卷积参数</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Qwen3.8-27B-DFlash2</td>
+<td style="text-align:right">5,120</td>
+<td style="text-align:right">5</td>
+<td>$[2,2,5120]$</td>
+<td>$[1280,5120]$</td>
+<td style="text-align:right">65,740,800</td>
+</tr>
+<tr>
+<td>Muse-Glimmer-30B-DFlash2</td>
+<td style="text-align:right">6,656</td>
+<td style="text-align:right">5</td>
+<td>$[2,2,6656]$</td>
+<td>$[1664,6656]$</td>
+<td style="text-align:right">111,022,080</td>
+</tr>
+</tbody>
+</table></div>
+<p>博客中的 <code>+16.5M</code> 来自五层 Qwen3-4B matched ablation，不是上述 27B/30B 发布 checkpoint 的参数量。不同 hidden size 下动态投影的主项近似按 $D^2/S$ 增长，不能把 ablation 数字直接套到发布模型。</p>
+<p>博客还观察到 DFlash 的 block 内 attention mass 从 Layer 1 的约 <code>30%</code> 降到 Layer 5 的约 <code>8%</code>；加入 convolution 后，Layers 4–5 的平均 block 内 attention 从 <code>9.4%</code> 降到 <code>0.5%</code>。官方解释是短卷积接管了局部依赖，attention 可以更多读取 block 之前的 target context。这是行为相关性证据，不应扩张成严格的因果归因证明。</p>
+<h3 id="5-3-前驱条件候选选择器">5.3 前驱条件候选选择器</h3>
+<p>Draft backbone 输出 hidden $h_i$ 后，先通过共享 target LM head 得到每个位置的 unary logits，再保留候选集：</p>
+<p>$$
+\mathcal{C}_i=\operatorname{TopK}(u_i,K),\qquad K=16
+$$</p>
+<p>对于候选 $c\in\mathcal{C}_i$ 和上一位置已选择 token $p$，selector 计算：</p>
+<p>$$
+s_i(c\mid p)=u_i(c)+\left\langle A_p\odot P h_i, B_c\right\rangle
+$$</p>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>符号</th>
+<th>含义</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>$u_i(c)$</td>
+<td>Draft hidden 经共享 target LM head 得到的候选基础分数。</td>
+</tr>
+<tr>
+<td>$A_p$</td>
+<td>predecessor token $p$ 的低秩 codebook embedding。</td>
+</tr>
+<tr>
+<td>$B_c$</td>
+<td>successor 候选 $c$ 的低秩 codebook embedding。</td>
+</tr>
+<tr>
+<td>$P h_i$</td>
+<td>把 hidden 投影到 rank 256 的表示。</td>
+</tr>
+<tr>
+<td>$\odot$</td>
+<td>逐元素乘法，使当前 hidden 调制 predecessor 表示。</td>
+</tr>
+</tbody>
+</table></div>
+<h4>5.3.1 从完整词表到一条条件路径</h4>
+<p>源码中的 selector 输入为 hidden $H\in\mathbb{R}^{B\times L\times D}$ 和共享 target LM head logits $U\in\mathbb{R}^{B\times L\times V}$，具体分成两个阶段：</p>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>阶段</th>
+<th>张量形状</th>
+<th>并行性</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>词表 top-$K$</td>
+<td><code>unary, candidates = topk(logits)</code>，二者均为 $[B,L,K]$</td>
+<td>所有位置并行；这是 selector 的主要耗时。</td>
+</tr>
+<tr>
+<td>Hidden 投影</td>
+<td>$PH$ 为 $[B,L,R]$</td>
+<td>所有位置并行。</td>
+</tr>
+<tr>
+<td>候选 codebook lookup</td>
+<td>$B_{\mathcal C_i}$ 为 $[B,K,R]$</td>
+<td>当前位置的 $K$ 个候选并行。</td>
+</tr>
+<tr>
+<td>前驱条件打分</td>
+<td><code>einsum("br,bkr-&gt;bk")</code> 得到 $[B,K]$</td>
+<td>当前槽内 $K$ 个候选并行。</td>
+</tr>
+<tr>
+<td>Path walk</td>
+<td>选出的 token 成为下一槽 predecessor</td>
+<td>位置之间顺序执行，但不再做 $D\rightarrow V$ 投影或 backbone forward。</td>
+</tr>
+</tbody>
+</table></div>
+<div class="mermaid">flowchart LR
+    A["已验证 anchor token"] --&gt; S1["位置 1 条件打分"]
+    U1["位置 1 top 16"] --&gt; S1
+    H1["位置 1 投影 hidden"] --&gt; S1
+    S1 --&gt; D1["选择 token d1"]
+
+    D1 --&gt; S2["位置 2 条件打分"]
+    U2["位置 2 top 16"] --&gt; S2
+    H2["位置 2 投影 hidden"] --&gt; S2
+    S2 --&gt; D2["选择 token d2"]
+
+    D2 --&gt; SN["后续位置条件打分"]
+    UN["后续位置 top 16"] --&gt; SN
+    HN["后续位置投影 hidden"] --&gt; SN
+    SN --&gt; DN["完整 proposal path"]
+
+    classDef context fill:#EAF3FF,stroke:#3274D9,color:#102A43,stroke-width:1.5px;
+    classDef core fill:#EAF8F0,stroke:#16A36A,color:#12372A,stroke-width:1.5px;
+    classDef select fill:#FFF4E5,stroke:#E78B22,color:#4A2A00,stroke-width:1.5px;
+    class A,H1,H2,HN context;
+    class U1,U2,UN select;
+    class S1,S2,SN,D1,D2,DN core;
+</div>
+<p>路径的第一个 predecessor 是最后一个已验证的 <code>anchor_ids</code>。第 $i$ 槽选出的 token 立即成为第 $i+1$ 槽的 predecessor，因此组合 <code>of course</code> 会获得与 <code>of problem</code> 不同的条件分数。所有位置的 backbone hidden、完整词表 logits、top-$K$ 与 hidden projection 已经提前并行算好；只有绿色路径上的轻量选择存在链式依赖。</p>
+<h4>5.3.2 Greedy 与 sampling</h4>
+<p>Greedy 时取当前条件分数最高的候选；sampling 时在 top-$K$ 条件分数上构造 $q_i$ 并采样，然后把实际 $q_i$ 返回给 target verification。</p>
+<p>这不是完整 $V\times V$ token 转移矩阵，也不是对 top-$K$ lattice 做昂贵的全局 Viterbi 搜索。它是一个低秩、前驱条件的逐位置 path walk：</p>
+<p>$$
+d_i\sim q_i(\cdot\mid d_{i-1},h_i),\qquad d_i\in\mathcal{C}_i
+$$</p>
+<p>大计算已经在一次 backbone forward 完成；selector 只在 $K=16$ 的小候选集上传播路径状态。</p>
+<p>PyTorch reference 返回三个对象：选择路径 $[B,L]$、原始候选索引 $[B,L,K]$，以及 sampling 模式下的条件概率 $q\in\mathbb{R}^{B\times L\times K}$。候选索引和 $q$ 必须同时进入拒绝采样，才能把稀疏 proposal 概率准确扣回完整 target 分布。</p>
+<p>博客在五层 Qwen3-4B、GSM8K 上单独比较 selector 与 DSpark-style full-vocabulary correction：</p>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>方法</th>
+<th style="text-align:right">新增参数</th>
+<th style="text-align:right">Draft–verify cycle latency 增量</th>
+<th style="text-align:right">Acceptance length，$T=0$</th>
+<th style="text-align:right">Acceptance length，$T=1$</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>DFlash</td>
+<td style="text-align:right">—</td>
+<td style="text-align:right">—</td>
+<td style="text-align:right">4.27</td>
+<td style="text-align:right">3.78</td>
+</tr>
+<tr>
+<td>加 DSpark correction</td>
+<td style="text-align:right"><code>+77.8M</code></td>
+<td style="text-align:right"><code>+9.6%</code></td>
+<td style="text-align:right">4.49</td>
+<td style="text-align:right">4.08</td>
+</tr>
+<tr>
+<td>加 path selector</td>
+<td style="text-align:right"><code>+2.0M</code></td>
+<td style="text-align:right"><code>+0.6%</code></td>
+<td style="text-align:right"><strong>4.61</strong></td>
+<td style="text-align:right"><strong>4.25</strong></td>
+</tr>
+</tbody>
+</table></div>
+<p>在这组 matched ablation 中，selector 用约 40 倍更少的新增参数、约 16 倍更低的 latency overhead 超过 DSpark correction。该结果证明“在已有 top-16 中选择”可以比“顺序重写全词表 logits”更便宜；它不等同于 DFlash 2 全系统普遍优于所有 DSpark checkpoint。</p>
+<h4>5.3.3 参数量与公开 checkpoint</h4>
+<p>当前公开实现包含 hidden projection、predecessor codebook 和 successor codebook，参数量为：</p>
+<p>$$
+P_{selector}=DR+VR+VR=R\left(D+2V\right)
+$$</p>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>Checkpoint</th>
+<th style="text-align:right">$D$</th>
+<th style="text-align:right">$V$</th>
+<th style="text-align:right">$R$</th>
+<th style="text-align:right">Selector 参数</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Qwen3.8-27B-DFlash2</td>
+<td style="text-align:right">5,120</td>
+<td style="text-align:right">248,320</td>
+<td style="text-align:right">256</td>
+<td style="text-align:right">128,450,560</td>
+</tr>
+<tr>
+<td>Muse-Glimmer-30B-DFlash2</td>
+<td style="text-align:right">6,656</td>
+<td style="text-align:right">202,048</td>
+<td style="text-align:right">256</td>
+<td style="text-align:right">105,152,512</td>
+</tr>
+</tbody>
+</table></div>
+<p>这些数字来自公开 safetensors header 的实际权重形状。它们明显大于博客 Qwen3-4B 消融表中的 <code>+2.0M</code>；公开资料没有解释消融配置与 rank-256 发布 checkpoint 在 selector 参数化上的差异。因此本报告只把 <code>+2.0M</code> 用作 matched ablation 的原始数字，不把它当成发布模型的参数量。发布实现虽然 codebook 参数多，但在线计算只 lookup 一个 predecessor 和 $K$ 个 successors，不做 $V\times V$ 转移。</p>
+<h3 id="5-4-为什么-有顺序依赖-仍能称为并行-drafting">5.4 为什么“有顺序依赖”仍能称为并行 drafting</h3>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>组件</th>
+<th>是否随 proposal 位置顺序执行</th>
+<th>是否重跑 Transformer backbone</th>
+<th>成本特征</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>DFlash 2 backbone</td>
+<td>否，整块并行</td>
+<td>只跑一次</td>
+<td>主体矩阵计算与 block 长度不再一比一增长。</td>
+</tr>
+<tr>
+<td>Dynamic causal convolution</td>
+<td>GPU 张量级并行</td>
+<td>否</td>
+<td>kernel size=2，局部且分组。</td>
+</tr>
+<tr>
+<td>Candidate path walk</td>
+<td>是，传递 predecessor token</td>
+<td>否</td>
+<td>top-16、rank 256；production 中融合为每请求一个 Triton program。</td>
+</tr>
+<tr>
+<td>Target verification</td>
+<td>对 proposal block 并行</td>
+<td>Target 跑一次 block forward</td>
+<td>最终决定接受前缀和 bonus token。</td>
+</tr>
+</tbody>
+</table></div>
+<p>因此，DFlash 2 不是“完全没有顺序操作”，而是把顺序操作压缩到不需要 backbone rollout 的廉价部分。</p>
+<h3 id="5-5-target-verification-与无损性">5.5 Target verification 与无损性</h3>
+<h4>Greedy decoding</h4>
+<p>Target 对 proposal block 一次性算出各位置 top-1。只有从 block 起点连续相等的 draft prefix 被提交；第一个不一致位置提交 target 自己的 top-1。最终序列与普通 greedy target decode 一致。</p>
+<h4>Sampling decoding</h4>
+<p>若 draft 在位置 $i$ 采到 $d_i$，target 分布为 $p_i$，selector proposal 分布为 $q_i$，接受概率为：</p>
+<p>$$
+a_i(d_i)=\min\left(1,\frac{p_i(d_i)}{q_i(d_i)}\right)
+$$</p>
+<p>若拒绝，则从残差分布采样：</p>
+<p>$$
+r_i(x)=\frac{\left[p_i(x)-q_i(x)\right]_+}
+{\sum_z\left[p_i(z)-q_i(z)\right]_+}
+$$</p>
+<p>代码中的 <code>_rejection_sample</code> 对 top-$K$ candidate indices 做 <code>scatter_add</code> 扣除 $q$，再执行 clamp、归一化和 residual sampling。若全部 draft token 接受，则从 target block 最后一个位置采样 bonus token。</p>
+<p>设第 $i$ 个 draft token 的条件接受概率为 $a_i$，每轮期望推进量可写成：</p>
+<p>$$
+\tau=1+\sum_{i=1}^{\gamma}\prod_{j=1}^{i}a_j
+$$</p>
+<p>其中 $1$ 对应 target 至少推进的 bonus 或校正 token，$\gamma$ 是 draft token 数。DFlash 2 提升速度的直接路径，就是以很小的 $T_{draft}$ 增量抬高后段 $a_i$，从而增加 $\tau$。</p>
+<h3 id="5-6-代码实现映射">5.6 代码实现映射</h3>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>代码位置</th>
+<th>实现事实</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><a href="https://github.com/z-lab/dflash/blob/07ebd93db9f472af339b644bb70221ad8428328a/dflash/model.py#L94-L124"><code>_rejection_sample</code></a></td>
+<td>按 $p/q$ 接受，拒绝时从 $(p-q)_+$ residual distribution 采样。</td>
+</tr>
+<tr>
+<td><a href="https://github.com/z-lab/dflash/blob/07ebd93db9f472af339b644bb70221ad8428328a/dflash/model.py#L180-L324"><code>dflash_generate</code></a></td>
+<td>Target prefill、draft proposal、target block verification、cache crop、hidden feedback 和统计。</td>
+</tr>
+<tr>
+<td><a href="https://github.com/z-lab/dflash/blob/07ebd93db9f472af339b644bb70221ad8428328a/dflash/model.py#L478-L512"><code>GroupedDynamicCausalConv</code></a></td>
+<td><code>_grouped_dynamic_convolve</code> 执行动态分组短卷积，只使用当前位置和左侧 offset。</td>
+</tr>
+<tr>
+<td><a href="https://github.com/z-lab/dflash/blob/07ebd93db9f472af339b644bb70221ad8428328a/dflash/model.py#L515-L547"><code>CandidateSelector</code></a></td>
+<td>target LM head top-$K$、低秩 predecessor/successor codebook 和路径滚动。</td>
+</tr>
+<tr>
+<td><a href="https://github.com/z-lab/dflash/blob/07ebd93db9f472af339b644bb70221ad8428328a/dflash/model.py#L630-L659"><code>DFlash2DraftModel</code></a></td>
+<td>给每层挂接 attention/MLP convolution，并启用 candidate selector。</td>
+</tr>
+</tbody>
+</table></div>
+<p>PyTorch 本地 reference 使用 Python position loop，适合说明语义；SGLang/vLLM production backend 把 path walk 融合到 Triton kernel，因此不能用 reference loop 的解释器开销估算线上成本。</p>
+<h2 id="6-官方效果">6. 官方效果</h2>
+<h3 id="6-1-评测口径">6.1 评测口径</h3>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>条件</th>
+<th>Muse-Glimmer-30B</th>
+<th>Qwen3.8-27B</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Runtime</td>
+<td>SGLang，单张 NVIDIA H200</td>
+<td>SGLang，单张 NVIDIA H200</td>
+</tr>
+<tr>
+<td>Attention</td>
+<td>Target 和 draft 均为 FlashAttention 3</td>
+<td>Target 和 draft 均为 FlashAttention 3</td>
+</tr>
+<tr>
+<td>Block size</td>
+<td>16，包含 15 个 draft token</td>
+<td>8，包含 7 个 draft token</td>
+</tr>
+<tr>
+<td>Sampling</td>
+<td>temperature 1.0、top-p 0.95、top-k 64、high reasoning strength</td>
+<td>temperature 1.0、top-p 0.95、top-k 20、xhigh reasoning effort</td>
+</tr>
+<tr>
+<td>最大生成</td>
+<td>4096 token</td>
+<td>4096 token</td>
+</tr>
+<tr>
+<td>对比方案</td>
+<td>Autoregressive、Meta 官方 DFlash、community DSpark、DFlash 2</td>
+<td>Autoregressive、模型内置 MTP、community DSpark、DFlash 2</td>
+</tr>
+<tr>
+<td>并发</td>
+<td>1、8、32</td>
+<td>1、8、32</td>
+</tr>
+</tbody>
+</table></div>
+<p>所有 speculative 方法在各自模型内使用相同 draft token 数。模型卡把 acceptance length 定义为“每请求 completion token 数除以 verification steps，再对请求取平均”，因此该值包含每轮由 target 推进的 token，不应误读为纯 draft accepted count。</p>
+<h3 id="6-2-qwen3-5-4b-matched-training-结果">6.2 Qwen3.5-4B matched-training 结果</h3>
+<p>官方博客还给出了 Qwen3.5-4B 的 matched setup：DFlash 和 DSpark 由团队在相同设置下训练，MTP 使用模型自带权重；thinking 开启，temperature 1.0、top-p 0.95、top-k 20、presence penalty 1.5，并使用无损拒绝采样。</p>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>Dataset</th>
+<th style="text-align:right">MTP</th>
+<th style="text-align:right">DFlash</th>
+<th style="text-align:right">DSpark</th>
+<th style="text-align:right">DFlash 2</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>GSM8K</td>
+<td style="text-align:right">4.78</td>
+<td style="text-align:right">4.99</td>
+<td style="text-align:right">5.69</td>
+<td style="text-align:right"><strong>6.20</strong></td>
+</tr>
+<tr>
+<td>MATH-500</td>
+<td style="text-align:right">5.04</td>
+<td style="text-align:right">5.42</td>
+<td style="text-align:right">6.20</td>
+<td style="text-align:right"><strong>6.76</strong></td>
+</tr>
+<tr>
+<td>HumanEval</td>
+<td style="text-align:right">4.84</td>
+<td style="text-align:right">5.43</td>
+<td style="text-align:right">5.80</td>
+<td style="text-align:right"><strong>6.28</strong></td>
+</tr>
+<tr>
+<td>MBPP</td>
+<td style="text-align:right">4.16</td>
+<td style="text-align:right">4.49</td>
+<td style="text-align:right">4.96</td>
+<td style="text-align:right"><strong>5.41</strong></td>
+</tr>
+<tr>
+<td>MT-Bench</td>
+<td style="text-align:right">3.90</td>
+<td style="text-align:right">4.26</td>
+<td style="text-align:right">4.77</td>
+<td style="text-align:right"><strong>5.20</strong></td>
+</tr>
+<tr>
+<td>Mean</td>
+<td style="text-align:right">4.54</td>
+<td style="text-align:right">4.92</td>
+<td style="text-align:right">5.49</td>
+<td style="text-align:right"><strong>5.97</strong></td>
+</tr>
+</tbody>
+</table></div>
+<p>DFlash 2 五任务全部最高，平均比 DFlash 多 <code>1.05</code> token、约 <code>21%</code>，比 DSpark 多 <code>0.48</code> token；完整 convolution+selector 相对五层 DFlash 的 draft–verify cycle latency 增量为 <code>1.3%</code>。这组数据比跨社区 checkpoint 更适合回答“两个新增模块本身是否有效”。</p>
+<h3 id="6-3-发布模型-acceptance-length-同框对比">6.3 发布模型 Acceptance length 同框对比</h3>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>Dataset</th>
+<th style="text-align:right">Muse DFlash 1</th>
+<th style="text-align:right">Muse DSpark</th>
+<th style="text-align:right">Muse DFlash 2</th>
+<th style="text-align:right">Qwen MTP</th>
+<th style="text-align:right">Qwen DSpark</th>
+<th style="text-align:right">Qwen DFlash 2</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>GSM8K</td>
+<td style="text-align:right">5.43</td>
+<td style="text-align:right">5.45</td>
+<td style="text-align:right"><strong>6.57</strong></td>
+<td style="text-align:right">5.02</td>
+<td style="text-align:right">4.36</td>
+<td style="text-align:right"><strong>5.46</strong></td>
+</tr>
+<tr>
+<td>MATH-500</td>
+<td style="text-align:right">5.39</td>
+<td style="text-align:right">5.01</td>
+<td style="text-align:right"><strong>6.56</strong></td>
+<td style="text-align:right">4.72</td>
+<td style="text-align:right">3.92</td>
+<td style="text-align:right"><strong>5.28</strong></td>
+</tr>
+<tr>
+<td>HumanEval</td>
+<td style="text-align:right">4.11</td>
+<td style="text-align:right">4.33</td>
+<td style="text-align:right"><strong>5.66</strong></td>
+<td style="text-align:right">3.91</td>
+<td style="text-align:right">3.30</td>
+<td style="text-align:right"><strong>4.39</strong></td>
+</tr>
+<tr>
+<td>MBPP</td>
+<td style="text-align:right">3.74</td>
+<td style="text-align:right">4.02</td>
+<td style="text-align:right"><strong>5.30</strong></td>
+<td style="text-align:right">3.99</td>
+<td style="text-align:right">3.51</td>
+<td style="text-align:right"><strong>4.79</strong></td>
+</tr>
+<tr>
+<td>MT-Bench</td>
+<td style="text-align:right">3.52</td>
+<td style="text-align:right">3.59</td>
+<td style="text-align:right"><strong>4.42</strong></td>
+<td style="text-align:right">3.74</td>
+<td style="text-align:right">3.01</td>
+<td style="text-align:right"><strong>4.10</strong></td>
+</tr>
+<tr>
+<td>五任务算术平均</td>
+<td style="text-align:right">4.438</td>
+<td style="text-align:right">4.480</td>
+<td style="text-align:right"><strong>5.702</strong></td>
+<td style="text-align:right">4.276</td>
+<td style="text-align:right">3.620</td>
+<td style="text-align:right"><strong>4.804</strong></td>
+</tr>
+</tbody>
+</table></div>
+<p>按五任务算术平均计算：</p>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>同框比较</th>
+<th style="text-align:right">DFlash 2 acceptance length 增幅</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Muse：相对官方 DFlash 1</td>
+<td style="text-align:right"><code>+28.5%</code></td>
+</tr>
+<tr>
+<td>Muse：相对 community DSpark</td>
+<td style="text-align:right"><code>+27.3%</code></td>
+</tr>
+<tr>
+<td>Qwen：相对内置 MTP</td>
+<td style="text-align:right"><code>+12.3%</code></td>
+</tr>
+<tr>
+<td>Qwen：相对 community DSpark</td>
+<td style="text-align:right"><code>+32.7%</code></td>
+</tr>
+</tbody>
+</table></div>
+<p>这些平均值是本报告基于模型卡五行结果做的算术汇总，不是博客新增指标。</p>
+<p>三种 DFlash-family 方法在发布模型卡中的结果可压缩为：</p>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>Target</th>
+<th>方法</th>
+<th style="text-align:right">五任务平均 acceptance length</th>
+<th style="text-align:right">并发 1 加速范围</th>
+<th style="text-align:right">并发 32 加速范围</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Muse-Glimmer-30B</td>
+<td>DFlash</td>
+<td style="text-align:right">4.438</td>
+<td style="text-align:right">2.57×–3.88×</td>
+<td style="text-align:right">0.97×–1.42×</td>
+</tr>
+<tr>
+<td>Muse-Glimmer-30B</td>
+<td>DSpark</td>
+<td style="text-align:right">4.480</td>
+<td style="text-align:right">2.49×–3.70×</td>
+<td style="text-align:right">0.95×–1.35×</td>
+</tr>
+<tr>
+<td>Muse-Glimmer-30B</td>
+<td><strong>DFlash 2</strong></td>
+<td style="text-align:right"><strong>5.702</strong></td>
+<td style="text-align:right"><strong>3.08×–4.62×</strong></td>
+<td style="text-align:right"><strong>1.15×–1.68×</strong></td>
+</tr>
+<tr>
+<td>Qwen3.8-27B</td>
+<td>DSpark</td>
+<td style="text-align:right">3.620</td>
+<td style="text-align:right">2.00×–2.69×</td>
+<td style="text-align:right">0.74×–1.13×</td>
+</tr>
+<tr>
+<td>Qwen3.8-27B</td>
+<td><strong>DFlash 2</strong></td>
+<td style="text-align:right"><strong>4.804</strong></td>
+<td style="text-align:right"><strong>2.67×–3.43×</strong></td>
+<td style="text-align:right"><strong>1.01×–1.45×</strong></td>
+</tr>
+</tbody>
+</table></div>
+<p>Muse 是唯一同时公开 DFlash、DSpark、DFlash 2 三者同框结果的 target；Qwen 模型卡没有 DFlash checkpoint，因此不补造该列。在 Muse 上，DSpark 相对 DFlash 的平均 acceptance 仅小幅变化，而 DFlash 2 同时提高平均 acceptance 与低/高并发吞吐；这说明两项新增模块的收益确实转化到了端到端 serving，但不能据此否定 DSpark 在其论文 production scheduler 口径下的结果。</p>
+<h3 id="6-4-dflash-2-吞吐与自回归相对加速">6.4 DFlash 2 吞吐与自回归相对加速</h3>
+<p>每个单元格为 <code>output tok/s（相对 autoregressive speedup）</code>。</p>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>Target</th>
+<th>Dataset</th>
+<th style="text-align:right">并发 1</th>
+<th style="text-align:right">并发 8</th>
+<th style="text-align:right">并发 32</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Muse-Glimmer-30B</td>
+<td>GSM8K</td>
+<td style="text-align:right">293.7（4.59×）</td>
+<td style="text-align:right">1,816.6（3.81×）</td>
+<td style="text-align:right">2,818.3（1.65×）</td>
+</tr>
+<tr>
+<td>Muse-Glimmer-30B</td>
+<td>MATH-500</td>
+<td style="text-align:right">295.5（4.62×）</td>
+<td style="text-align:right">1,859.3（3.99×）</td>
+<td style="text-align:right">2,869.6（1.68×）</td>
+</tr>
+<tr>
+<td>Muse-Glimmer-30B</td>
+<td>HumanEval</td>
+<td style="text-align:right">266.2（4.09×）</td>
+<td style="text-align:right">1,784.9（3.57×）</td>
+<td style="text-align:right">2,780.2（1.55×）</td>
+</tr>
+<tr>
+<td>Muse-Glimmer-30B</td>
+<td>MBPP</td>
+<td style="text-align:right">264.8（4.14×）</td>
+<td style="text-align:right">1,719.7（3.50×）</td>
+<td style="text-align:right">2,685.4（1.56×）</td>
+</tr>
+<tr>
+<td>Muse-Glimmer-30B</td>
+<td>MT-Bench</td>
+<td style="text-align:right">197.4（3.08×）</td>
+<td style="text-align:right">1,288.9（2.74×）</td>
+<td style="text-align:right">1,975.5（1.15×）</td>
+</tr>
+<tr>
+<td>Qwen3.8-27B</td>
+<td>GSM8K</td>
+<td style="text-align:right">236.1（3.43×）</td>
+<td style="text-align:right">1,328.7（2.84×）</td>
+<td style="text-align:right">1,922.5（1.45×）</td>
+</tr>
+<tr>
+<td>Qwen3.8-27B</td>
+<td>MATH-500</td>
+<td style="text-align:right">230.7（3.34×）</td>
+<td style="text-align:right">1,368.3（2.85×）</td>
+<td style="text-align:right">1,951.8（1.30×）</td>
+</tr>
+<tr>
+<td>Qwen3.8-27B</td>
+<td>HumanEval</td>
+<td style="text-align:right">214.6（3.11×）</td>
+<td style="text-align:right">1,291.5（2.67×）</td>
+<td style="text-align:right">1,799.0（1.16×）</td>
+</tr>
+<tr>
+<td>Qwen3.8-27B</td>
+<td>MBPP</td>
+<td style="text-align:right">226.9（3.29×）</td>
+<td style="text-align:right">1,328.0（2.78×）</td>
+<td style="text-align:right">1,886.8（1.25×）</td>
+</tr>
+<tr>
+<td>Qwen3.8-27B</td>
+<td>MT-Bench</td>
+<td style="text-align:right">184.0（2.67×）</td>
+<td style="text-align:right">1,090.2（2.27×）</td>
+<td style="text-align:right">1,525.3（1.01×）</td>
+</tr>
+</tbody>
+</table></div>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>Target</th>
+<th style="text-align:right">并发 1 五任务平均加速</th>
+<th style="text-align:right">并发 8 五任务平均加速</th>
+<th style="text-align:right">并发 32 五任务平均加速</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Muse-Glimmer-30B</td>
+<td style="text-align:right">4.104×</td>
+<td style="text-align:right">3.522×</td>
+<td style="text-align:right">1.518×</td>
+</tr>
+<tr>
+<td>Qwen3.8-27B</td>
+<td style="text-align:right">3.168×</td>
+<td style="text-align:right">2.682×</td>
+<td style="text-align:right">1.234×</td>
+</tr>
+</tbody>
+</table></div>
+<p>关键观察：</p>
+<ol>
+<li>数学任务的 acceptance 和加速最高，开放式 MT-Bench 最低，说明 proposal 难度仍强烈依赖 workload。</li>
+<li>并发提高后 target 自回归 baseline 的 GPU 利用率上升，投机解码相对加速自然下降；DFlash 2 不是“并发越高倍率不变”。</li>
+<li>两套模型在并发 32、五个任务上仍全部高于 <code>1.0×</code>，但 Qwen MT-Bench 已接近盈亏平衡的 <code>1.01×</code>。</li>
+<li>模型卡同框中，Muse 的 DFlash 1/DSpark 在并发 32 MT-Bench 已为 <code>0.97×/0.95×</code>，Qwen 的 MTP/DSpark 在 MATH、HumanEval、MBPP、MT-Bench 多项低于 <code>1.0×</code>；DFlash 2 的更长 acceptance 延后了高并发失速点。</li>
+</ol>
+<h3 id="6-5-动态卷积与-selector-的额外成本">6.5 动态卷积与 selector 的额外成本</h3>
+<p>vLLM PR 在 Qwen3.8-27B、5 层、hidden 5120、vocab 248320、block 8、top-$K=16$ 上给出的组件 profiler：</p>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th style="text-align:right">Batch</th>
+<th style="text-align:right">Dynamic convolution</th>
+<th style="text-align:right">Selector</th>
+<th style="text-align:right">二者合计</th>
+<th style="text-align:right">完整 serving step</th>
+<th style="text-align:right">Step 占比</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align:right">1</td>
+<td style="text-align:right">0.113 ms</td>
+<td style="text-align:right">0.061 ms</td>
+<td style="text-align:right"><strong>0.174 ms</strong></td>
+<td style="text-align:right">20.70 ms</td>
+<td style="text-align:right"><strong>0.84%</strong></td>
+</tr>
+<tr>
+<td style="text-align:right">8</td>
+<td style="text-align:right">0.121 ms</td>
+<td style="text-align:right">0.106 ms</td>
+<td style="text-align:right"><strong>0.227 ms</strong></td>
+<td style="text-align:right">31.80 ms</td>
+<td style="text-align:right"><strong>0.71%</strong></td>
+</tr>
+<tr>
+<td style="text-align:right">32</td>
+<td style="text-align:right">0.173 ms</td>
+<td style="text-align:right">0.197 ms</td>
+<td style="text-align:right"><strong>0.370 ms</strong></td>
+<td style="text-align:right">54.93 ms</td>
+<td style="text-align:right"><strong>0.67%</strong></td>
+</tr>
+</tbody>
+</table></div>
+<p>其中 selector 的 lattice 与 walk 数学本身约 <code>0.020 ms</code>，主要 selector 成本来自大词表 top-$K$。SGLang PR 另以 Muse、block 16、四个 H200 shard 做 DFlash 1→DFlash 2 增量测试，估算额外 step cost 为 <code>1.5%–2.7%</code>；sampling 下 acceptance 增幅约 <code>24%</code>、吞吐增幅约 <code>21%</code>。</p>
+<p>两组数值定义不同：vLLM 表是组件耗时占完整 step 的比例，SGLang 表是根据 acceptance 与 throughput 增益反推的净 step cost，不能逐项直接相减。但两者共同证明新增依赖模块不是主耗时。</p>
+<h2 id="7-与其他投机采样模型的机制对比">7. 与其他投机采样模型的机制对比</h2>
+<h3 id="7-1-dflash-dspark-与-dflash-2-的机制演进">7.1 DFlash、DSpark 与 DFlash 2 的机制演进</h3>
+<p>三者都保留 DFlash 的核心前提：整块 mask slots 只通过一次主要 draft backbone。差异不是“并行或串行”二选一，而是顺序依赖放在哪里、是否对完整词表重新打分、是否同时调度 verification budget。</p>
+<div class="mermaid">flowchart TB
+    C["Target 多层上下文与 mask block"]
+
+    subgraph F1["DFlash"]
+        A1["一次并行 backbone"] --&gt; A2["各位置独立 LM logits"]
+        A2 --&gt; A3["固定 block proposal"]
+    end
+
+    subgraph F2["DSpark"]
+        B1["一次并行 backbone"] --&gt; B2["逐位置 Markov 或 RNN head"]
+        B2 --&gt; B3["完整词表 correction"]
+        B3 --&gt; B4["Confidence 调度验证长度"]
+    end
+
+    subgraph F3["DFlash 2"]
+        D1["五层并行 backbone"] --&gt; D2["每层内嵌动态因果短卷积"]
+        D2 --&gt; D3["各位置 top 16"]
+        D3 --&gt; D4["低秩前驱条件 path walk"]
+    end
+
+    C --&gt; A1
+    C --&gt; B1
+    C --&gt; D1
+    A3 --&gt; V["Target block verification"]
+    B4 --&gt; V
+    D4 --&gt; V
+
+    classDef context fill:#EAF3FF,stroke:#3274D9,color:#102A43,stroke-width:1.5px;
+    classDef core fill:#EAF8F0,stroke:#16A36A,color:#12372A,stroke-width:1.5px;
+    classDef select fill:#FFF4E5,stroke:#E78B22,color:#4A2A00,stroke-width:1.5px;
+    classDef verify fill:#F3EEFF,stroke:#7857D8,color:#2E1A66,stroke-width:1.5px;
+    class C context;
+    class A1,A2,A3 core;
+    class B1,B2,B3,B4 select;
+    class D1,D2,D3,D4 core;
+    class V verify;
+</div>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>维度</th>
+<th>DFlash</th>
+<th>DSpark</th>
+<th>DFlash 2</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>并行骨干</td>
+<td>DFlash block-parallel backbone</td>
+<td>继承 DFlash 式并行骨干</td>
+<td>继承 DFlash backbone</td>
+</tr>
+<tr>
+<td>Hidden 层块内依赖</td>
+<td>无专用补偿模块</td>
+<td>主要交给骨干后的 sequential head</td>
+<td>每层 Attention、MLP 前后使用分组动态因果短卷积</td>
+</tr>
+<tr>
+<td>Token 路径依赖</td>
+<td>各位置 LM logits 基本独立</td>
+<td>Markov、gated Markov 或 RNN head 顺序传播</td>
+<td>Top-$K$ candidate selector 顺序传播</td>
+</tr>
+<tr>
+<td>每槽打分范围</td>
+<td>一次共享 LM head 得到全词表</td>
+<td>顺序产生完整词表 correction</td>
+<td>全词表 top-$K$ 只做一次；顺序阶段只打分 $K=16$ 个候选</td>
+</tr>
+<tr>
+<td>典型顺序公式</td>
+<td>$d_i=\arg\max u_i$</td>
+<td>$\ell_i=u_i+W_2W_1[d_{i-1}]$</td>
+<td>$s_i(c\mid d_{i-1})=u_i(c)+\langle A_{d_{i-1}}\odot Ph_i,B_c\rangle$</td>
+</tr>
+<tr>
+<td>验证长度</td>
+<td>固定 block</td>
+<td>Confidence head 加 hardware-aware prefix scheduling</td>
+<td>固定 block</td>
+</tr>
+<tr>
+<td>Sampling proposal 分布</td>
+<td>来自各位置独立 logits</td>
+<td>来自 correction 后完整词表分布</td>
+<td>来自 top-$K$ 条件分布，并返回稀疏 $q$ 做拒绝采样</td>
+</tr>
+<tr>
+<td>解决重点</td>
+<td>先把 draft latency 降下来</td>
+<td>同时改善 proposal coherence 与验证预算利用率</td>
+<td>用两项局部模块改善 coherence，同时保持主要骨干并行</td>
+</tr>
+<tr>
+<td>系统复杂度</td>
+<td>最低</td>
+<td>三者中最高，包含 head、confidence 与 scheduler</td>
+<td>中等，新增 convolution 与 selector kernel</td>
+</tr>
+</tbody>
+</table></div>
+<h3 id="7-2-dspark-sequential-head-与-dflash-2-selector-的实现级区别">7.2 DSpark sequential head 与 DFlash 2 selector 的实现级区别</h3>
+<p>本地 DSpark <code>VanillaMarkov</code> 使用一个 token embedding 和一个 $R\rightarrow V$ 线性层：</p>
+<p>$$
+\ell_i=u_i+W_2W_1[d_{i-1}]
+$$</p>
+<p>它在每个 proposal 槽根据上一个 token 生成完整词表 bias，再对修正后的完整 logits 采样。Gated 版本再用当前 hidden 调制 predecessor embedding；RNN 版本维护 block 内 recurrent state，使当前位置可读取更长的已选路径。DFlash 2 则不改写完整词表，只在 DFlash 已给出的 top-$K$ 集合中重新排序：</p>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>对比项</th>
+<th>DSpark sequential head</th>
+<th>DFlash 2 candidate selector</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>输入</td>
+<td>Base logits、前驱 token；gated/RNN 版本还读 hidden</td>
+<td>Base logits、hidden、anchor token</td>
+</tr>
+<tr>
+<td>词表操作</td>
+<td>每个槽顺序执行 $R\rightarrow V$ correction</td>
+<td>完整词表 top-$K$ 对所有槽并行完成；顺序阶段只处理 $K$ 个候选</td>
+</tr>
+<tr>
+<td>单槽顺序主计算</td>
+<td>约 $O(VR)$</td>
+<td>约 $O(KR)$，其中 $K=16$</td>
+</tr>
+<tr>
+<td>路径记忆</td>
+<td>Vanilla 为一阶 Markov；RNN 可保留长前缀状态</td>
+<td>一阶 predecessor token 加当前位置 hidden</td>
+</tr>
+<tr>
+<td>输出分布</td>
+<td>Correction 后的完整词表分布</td>
+<td>Top-$K$ 上的稀疏条件分布 $q$</td>
+</tr>
+<tr>
+<td>Hidden coherence</td>
+<td>不修改已完成的 backbone hidden</td>
+<td>动态短卷积已在每一层先改善 hidden</td>
+</tr>
+<tr>
+<td>Verification 调度</td>
+<td>另有 confidence head 和 hardware-aware scheduler</td>
+<td>无 confidence head，固定 block verification</td>
+</tr>
+<tr>
+<td>适合解决的问题</td>
+<td>Proposal coherence 与高并发验证浪费联合优化</td>
+<td>候选已存在但排序错误，以及后段 hidden 候选质量衰减</td>
+</tr>
+</tbody>
+</table></div>
+<p>因此二者的关键差异不是“是否有串行 head”——两者都有轻量 path dependence——而是 <strong>DSpark 在每槽顺序修正完整词表，DFlash 2 把完整词表计算留在并行阶段，顺序阶段只选择候选集</strong>。DFlash 2 的代价是 selector 无法选出 top-$K$ 外的 token，所以必须再用动态卷积提高后段 Recall@$K$。</p>
+<h3 id="7-3-与其他-draft-路线的机制边界">7.3 与其他 draft 路线的机制边界</h3>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>方法</th>
+<th>Draft 机制</th>
+<th>路径依赖</th>
+<th>与 DFlash 2 的主要差异</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>小自回归 draft model</td>
+<td>小模型逐 token rollout</td>
+<td>完整自回归</td>
+<td>通用但 $γ$ 个 proposal 通常要执行 $γ$ 次轻量 backbone。</td>
+</tr>
+<tr>
+<td>Medusa</td>
+<td>Target 顶部多个 future-token heads 组成候选树</td>
+<td>各 future head 早期相对独立</td>
+<td>无独立 draft backbone，但依赖 tree attention 验证多分支。</td>
+</tr>
+<tr>
+<td>EAGLE-3</td>
+<td>融合 target features 的轻量 drafter 自回归 rollout</td>
+<td>完整已生成前缀</td>
+<td>路径条件更强，draft latency 随 rollout steps 增长。</td>
+</tr>
+<tr>
+<td>Native MTP / NextN</td>
+<td>模型原生多 token prediction modules</td>
+<td>由前一 token embedding 或 step state 递推</td>
+<td>与 target 同源，但只适用于原生带对应权重的模型。</td>
+</tr>
+<tr>
+<td>DFly 加 D-cut</td>
+<td>Shared context、逐层 target fusion、可选 hidden correction；D-cut 分配验证预算</td>
+<td>由 correction 与调度策略决定</td>
+<td>更强调 target feature 利用和高并发验证预算，不采用 DFlash 2 的卷积加 top-$K$ selector 组合。</td>
+</tr>
+</tbody>
+</table></div>
+<h3 id="7-4-效果数字应该怎样比较">7.4 效果数字应该怎样比较</h3>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>方法</th>
+<th>公开效果</th>
+<th>可比性说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Medusa</td>
+<td>官方仓库概括在多种 LLM 上为 <code>2.2×–3.6×</code>。</td>
+<td>主要为早期模型、不同 runtime 和 batch 口径，不能与 DFlash 2 H200 表逐格对比。</td>
+</tr>
+<tr>
+<td>EAGLE-3</td>
+<td>官方仓库概括 13B 模型最高 <code>5.6×</code>。</td>
+<td>模型、硬件、候选树和 workload 不同，只能说明自回归 feature drafter 的潜力。</td>
+</tr>
+<tr>
+<td>DFlash 1</td>
+<td>Muse 同框中并发 1 为 <code>2.57×–3.88×</code>，并发 32 为 <code>0.97×–1.42×</code>。</td>
+<td>与 Muse DFlash 2 同 target、相同 draft 数、相同 H200/SGLang 口径，可直接比较。</td>
+</tr>
+<tr>
+<td>Native MTP</td>
+<td>Qwen 同框中并发 1 为 <code>1.96×–2.59×</code>，并发 32 为 <code>0.77×–1.04×</code>。</td>
+<td>与 Qwen DFlash 2 同框，可直接比较；不能代表所有模型的 native MTP。</td>
+</tr>
+<tr>
+<td>Community DSpark</td>
+<td>Muse/Qwen 两张卡均给出同框数据；acceptance 和 throughput 低于对应 DFlash 2。</td>
+<td>只代表被测 community checkpoint，不等价于 DSpark 论文中的 DeepSeek-V4 production 系统。</td>
+</tr>
+<tr>
+<td>DSpark 论文</td>
+<td>Qwen3 4B/8B/14B macro accepted length 相对 EAGLE-3 提升 <code>30.9%/26.7%/30.0%</code>，相对 DFlash 提升 <code>16.3%/18.4%/18.3%</code>；DeepSeek-V4 live traffic 在 matched throughput 下 per-user speed 提升 <code>57%–85%</code>。</td>
+<td>这是 DSpark 自身论文的不同 target 和生产 scheduler 口径，不可用 DFlash 2 模型卡直接反驳或替代。</td>
+</tr>
+<tr>
+<td>DFly 加 D-cut</td>
+<td>AngelSpec 报告中，DFly 在 Hy3-A21B 相对 DFlash 平均 accepted length 提高约 <code>29.8%</code>；D-cut 在 live traffic 并发 64 相对 DFly throughput 提高 <code>15.7%</code>。</td>
+<td>Target、runtime 与 workload 不同；重点体现 per-layer fusion、hidden correction 和动态验证预算的价值。</td>
+</tr>
+<tr>
+<td><strong>DFlash 2</strong></td>
+<td>本报告第 6 节：单 H200 并发 1 最高 <code>4.62×</code>，并发 32 全部测试仍不低于 <code>1.01×</code>。</td>
+<td>当前最可信结论来自 Muse/Qwen3.8 两张同口径模型卡；还没有跨更多 target 的论文级系统评估。</td>
+</tr>
+</tbody>
+</table></div>
+<p>“DFlash 2 在模型卡中超过 community DSpark”与“DSpark 在 DeepSeek-V4 production 中很强”可以同时成立。决定结果的除了机制，还有 target family、训练数据、checkpoint 收敛质量、draft block、sampling、kernel 和 scheduler。</p>
+<h2 id="8-公开实现与技术边界">8. 公开实现与技术边界</h2>
+<h3 id="8-1-已公开支持">8.1 已公开支持</h3>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>路径</th>
+<th>2026-08-24 状态</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>本地 Transformers reference</td>
+<td>已公开</td>
+<td>支持 Muse-Glimmer-30B DFlash 2，便于语义验证和小规模测试。</td>
+</tr>
+<tr>
+<td>MLX / Apple Silicon</td>
+<td>已公开</td>
+<td>支持 Qwen3.8-27B；README 提醒量化 matmul 在较大 verify width 下效率会下降，量化时建议 <code>block_size &lt;= 5</code>。</td>
+</tr>
+<tr>
+<td>SGLang</td>
+<td>PR #35371 已合并</td>
+<td>Selector 融入 draft CUDA graph，path walk 使用 Triton kernel。</td>
+</tr>
+<tr>
+<td>vLLM</td>
+<td>PR #52816 已合并</td>
+<td>DFlash 2 使用 V2 model runner；V1 DFlash proposer 不含 selector。</td>
+</tr>
+<tr>
+<td>oMLX</td>
+<td>README 给出单独发行版</td>
+<td>需要按项目发行版本部署。</td>
+</tr>
+<tr>
+<td>llama.cpp</td>
+<td>PR #27342 仍为 open</td>
+<td>PR 内 Qwen3.8-27B 在 M5 Pro 有量化实验，但尚不能写成主干已支持。</td>
+</tr>
+</tbody>
+</table></div>
+<h3 id="8-2-当前限制">8.2 当前限制</h3>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>限制</th>
+<th>影响</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>公开 DFlash 2 checkpoint 目前只有 Muse-Glimmer-30B 和 Qwen3.8-27B</td>
+<td>Checkpoint 与 target 的 hidden size、词表、抽取层、mask token 和 LM head 绑定，不是可跨模型直接复用的通用插件。</td>
+</tr>
+<tr>
+<td>公开主结果集中在单 H200 与 SGLang</td>
+<td>多卡 TP、不同 GPU、量化和不同 serving engine 需要重新 profile。</td>
+</tr>
+<tr>
+<td>高并发相对收益下降</td>
+<td>并发 32 的 Qwen MT-Bench 只有 <code>1.01×</code>；上线必须覆盖真实并发分布。</td>
+</tr>
+<tr>
+<td>固定 block，没有 confidence scheduler</td>
+<td>难样本或高负载时可能验证低收益 suffix；可考虑未来与 adaptive verification 结合。</td>
+</tr>
+<tr>
+<td>大词表 top-$K$ 是 selector 主要成本</td>
+<td>需要 FlashInfer radix top-k 或等价优化；fallback <code>torch.topk</code> 可能改变成本。</td>
+</tr>
+<tr>
+<td>Sampling 正确性依赖 $p/q$ 口径一致</td>
+<td>Temperature、top-p、top-k、candidate indices 和 rejection residual 必须严格匹配。</td>
+</tr>
+<tr>
+<td>Reference 与 production kernel 不同</td>
+<td>不应以 Python loop benchmark 代表 SGLang/vLLM 性能，也不应只验证 production 吞吐而跳过分布一致性测试。</td>
+</tr>
+<tr>
+<td>公开仓库以 inference/benchmark 为主</td>
+<td>当前代码和模型卡没有披露完整 DFlash 2 训练 recipe、数据配比及全部超参数；报告不推测未公开训练细节。</td>
+</tr>
+</tbody>
+</table></div>
+<h3 id="8-3-公开代码与实现链接">8.3 公开代码与实现链接</h3>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>内容</th>
+<th>公开链接</th>
+<th>技术定位</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>DFlash 2 reference</td>
+<td><a href="https://github.com/z-lab/dflash">z-lab/dflash</a></td>
+<td>PyTorch、MLX、生成循环、两个新增模块和 benchmark 入口。</td>
+</tr>
+<tr>
+<td>DFlash 论文</td>
+<td><a href="https://arxiv.org/abs/2602.06036">arXiv:2602.06036</a></td>
+<td>DFlash block diffusion backbone 的原始定义。</td>
+</tr>
+<tr>
+<td>DSpark 代码与权重</td>
+<td><a href="https://github.com/deepseek-ai/DeepSpec">deepseek-ai/DeepSpec</a></td>
+<td>Markov/gated/RNN head、confidence head、训练代码与公开 checkpoint。</td>
+</tr>
+<tr>
+<td>官方技术文章</td>
+<td><a href="https://inco.ai/blog/dflash2/">DFlash 2: Keep Drafting Parallel</a></td>
+<td>动机、Recall@$K$、selector/conv 消融和 matched 对比。</td>
+</tr>
+<tr>
+<td>Muse checkpoint</td>
+<td><a href="https://huggingface.co/incoai/Muse-Glimmer-30B-DFlash2">Muse-Glimmer-30B-DFlash2</a></td>
+<td>Block 16、五层 drafter 的公开权重与结果。</td>
+</tr>
+<tr>
+<td>Qwen checkpoint</td>
+<td><a href="https://huggingface.co/incoai/Qwen3.8-27B-DFlash2">Qwen3.8-27B-DFlash2</a></td>
+<td>Block 8、五层 drafter 的公开权重与结果。</td>
+</tr>
+<tr>
+<td>SGLang backend</td>
+<td><a href="https://github.com/sgl-project/sglang/pull/35371">PR #35371</a></td>
+<td>CUDA graph、Triton path walk 与生产 benchmark。</td>
+</tr>
+<tr>
+<td>vLLM backend</td>
+<td><a href="https://github.com/vllm-project/vllm/pull/52816">PR #52816</a></td>
+<td>V2 proposer、radix top-k 与组件 profiler。</td>
+</tr>
+<tr>
+<td>llama.cpp backend</td>
+<td><a href="https://github.com/ggml-org/llama.cpp/pull/27342">PR #27342</a></td>
+<td>Apple Silicon/量化实现；截至报告日期尚未合并。</td>
+</tr>
+</tbody>
+</table></div>
+<h2 id="9-技术评价">9. 技术评价</h2>
+<p>DFlash 2 的技术价值在于找到一个很实用的中间点：</p>
+<ul>
+<li>它不像传统小模型或 EAGLE 那样为每个 draft token 重跑轻量 backbone。</li>
+<li>它不像 DFlash 1 那样主要依赖各位置独立 logits。</li>
+<li>它不像 DSpark 那样把 confidence estimation 和 hardware-aware scheduler 一并纳入必要路径。</li>
+<li>它用 dynamic causal convolution 改善 hidden coherence，再用 predecessor-conditioned selector 改善 token path coherence，最后仍由标准 target verification 保证无损。</li>
+</ul>
+<p>官方同框结果表明，这种设计不只是提高 acceptance 指标：在 Muse-Glimmer-30B 与 Qwen3.8-27B 上，它把接受长度提升转化成了低并发到高并发的实际吞吐收益，而且新增模块成本只占完整 step 的低个位数百分比。</p>
+<p>当前最稳妥的结论应限定为：<strong>DFlash 2 已在两套现代 27B/30B target 上证明“并行草稿加廉价因果补偿”有效。它的主要创新不是新的 verifier，也不是新的 scheduler，而是把 hidden coherence 与 token-path coherence 分别交给动态短卷积和 top-$K$ selector，并把顺序计算压缩到无需重跑 backbone 的候选选择阶段。</strong></p>
+<h2 id="10-参考资料">10. 参考资料</h2>
+<ol>
+<li>Inco AI, <a href="https://inco.ai/blog/dflash2/">DFlash 2: Keep Drafting Parallel</a>, 2026-08.</li>
+<li>Jian Chen, Yesheng Liang, Zhijian Liu, <a href="https://arxiv.org/abs/2602.06036">DFlash: Block Diffusion for Flash Speculative Decoding</a>, ICML 2026.</li>
+<li>z-lab, <a href="https://github.com/z-lab/dflash">DFlash GitHub repository</a>, code baseline <code>07ebd93db9f472af339b644bb70221ad8428328a</code>.</li>
+<li>Inco AI, <a href="https://huggingface.co/incoai/Muse-Glimmer-30B-DFlash2">Muse-Glimmer-30B-DFlash2 model card</a>.</li>
+<li>Inco AI, <a href="https://huggingface.co/incoai/Qwen3.8-27B-DFlash2">Qwen3.8-27B-DFlash2 model card</a>.</li>
+<li>SGLang, <a href="https://github.com/sgl-project/sglang/pull/35371">DFlash 2 integration PR #35371</a>.</li>
+<li>vLLM, <a href="https://github.com/vllm-project/vllm/pull/52816">DFlash 2 integration PR #52816</a>.</li>
+<li>DeepSeek-AI, <code>DSpark: Confidence-Scheduled Speculative Decoding with Semi-Autoregressive Generation</code>, <a href="https://github.com/deepseek-ai/DeepSpec">DeepSpec repository</a>, <a href="../../DeepSpec/DSpark_paper.pdf">本地 PDF</a>.</li>
+<li>Tianle Cai et al., <a href="https://arxiv.org/abs/2401.10774">Medusa: Simple LLM Inference Acceleration Framework with Multiple Decoding Heads</a>, 2024.</li>
+<li>Yuhui Li et al., <a href="https://arxiv.org/abs/2503.01840">EAGLE-3: Scaling up Inference Acceleration of Large Language Models via Training-Time Test</a>, 2025.</li>
+<li>Tencent Hunyuan AI Infra, <a href="https://arxiv.org/abs/2607.25852">AngelSpec: Towards Real-World High Performance Inference with Speculative Decoding</a>, 2026.</li>
+</ol>
+
+    </article>
+  </main>
+  <script>
+    window.addEventListener('DOMContentLoaded', () => {
+      if (window.mermaid) {
+        mermaid.initialize({ startOnLoad: true, theme: 'neutral', securityLevel: 'strict' });
+      }
+    });
+    const fill = document.getElementById('progressFill');
+    window.addEventListener('scroll', () => {
+      const h = document.documentElement.scrollHeight - window.innerHeight;
+      fill.style.width = h > 0 ? `${window.scrollY / h * 100}%` : '0%';
+    }, { passive: true });
+    const links = document.querySelectorAll('#tocList a');
+    const sections = [];
+    links.forEach(a => {
+      const el = document.getElementById(a.getAttribute('href').slice(1));
+      if (el) sections.push({ el, a });
+    });
+    const observer = new IntersectionObserver((entries) => {
+      entries.forEach(entry => {
+        if (entry.isIntersecting) {
+          links.forEach(a => a.classList.remove('active'));
+          const hit = sections.find(s => s.el === entry.target);
+          if (hit) hit.a.classList.add('active');
+        }
+      });
+    }, { threshold: 0.08, rootMargin: '-72px 0px -64% 0px' });
+    sections.forEach(s => observer.observe(s.el));
+  </script>
+</body>
+</html>

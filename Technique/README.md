@@ -14,6 +14,8 @@
 
 注意：`contexts\kimi_k2_7\Technique` 对应的线上发布远端不是 `aliceengle/anwsome_vllm_infer_code`，而是 `aliceengle/paper_and_technique_share`。不要把这个目录的 Pages 内容推到 `anwsome_vllm_infer_code` 的 `gh-pages` 分支。
 
+报告 Markdown 统一放在 `Technique\md\`；`Technique\README.md` 作为发布说明保留在根目录。
+
 ## 凭据记录要求
 
 - 141 SSH 登录用户：`admin`
@@ -53,10 +55,10 @@ SSHPASS="$WIN141_PASSWORD" sshpass -e ssh $SSH_OPTS admin@192.168.28.141 \
 
 ### 1. 从主工程生成 HTML
 
-以 speculative decoding 报告为例，先把 DeepSeek 技术报告复制到主工程的 Technique 目录，再生成 HTML：
+以 speculative decoding 报告为例，先把 DeepSeek 技术报告复制到主工程的 Technique\md 目录，再生成 HTML：
 
 ```cmd
-copy /Y D:\claude_code_ws\anwsome_vllm_infer_code\DeepSeek_technique\Report\technique\speculative_decoding_technique_comparison_glm52_report_20260721.md D:\claude_code_ws\anwsome_vllm_infer_code\contexts\kimi_k2_7\Technique\speculative_decoding_technique_comparison_glm52_report_20260721.md
+copy /Y D:\claude_code_ws\anwsome_vllm_infer_code\DeepSeek_technique\Report\technique\speculative_decoding_technique_comparison_glm52_report_20260721.md D:\claude_code_ws\anwsome_vllm_infer_code\contexts\kimi_k2_7\Technique\md\speculative_decoding_technique_comparison_glm52_report_20260721.md
 python D:\claude_code_ws\anwsome_vllm_infer_code\contexts\kimi_k2_7\Technique\tools\build_speculative_decoding_html.py
 ```
 
@@ -69,7 +71,7 @@ D:\claude_code_ws\anwsome_vllm_infer_code\contexts\kimi_k2_7\Technique\html\spec
 ### 2. 同步到发布仓库
 
 ```cmd
-copy /Y D:\claude_code_ws\anwsome_vllm_infer_code\contexts\kimi_k2_7\Technique\speculative_decoding_technique_comparison_glm52_report_20260721.md D:\claude_code_ws\paper_and_technique_share_publish\Technique\speculative_decoding_technique_comparison_glm52_report_20260721.md
+copy /Y D:\claude_code_ws\anwsome_vllm_infer_code\contexts\kimi_k2_7\Technique\md\speculative_decoding_technique_comparison_glm52_report_20260721.md D:\claude_code_ws\paper_and_technique_share_publish\Technique\md\speculative_decoding_technique_comparison_glm52_report_20260721.md
 xcopy /E /I /Y D:\claude_code_ws\anwsome_vllm_infer_code\contexts\kimi_k2_7\Technique\html\speculative-decoding-technique-comparison-glm52-260721 D:\claude_code_ws\paper_and_technique_share_publish\Technique\html\speculative-decoding-technique-comparison-glm52-260721
 copy /Y D:\claude_code_ws\anwsome_vllm_infer_code\contexts\kimi_k2_7\Technique\tools\build_speculative_decoding_html.py D:\claude_code_ws\paper_and_technique_share_publish\Technique\tools\build_speculative_decoding_html.py
 ```
@@ -99,7 +101,7 @@ find /c ".mermaid svg" D:\claude_code_ws\paper_and_technique_share_publish\Techn
 ```cmd
 git -C D:\claude_code_ws\paper_and_technique_share_publish status --short --branch
 git -C D:\claude_code_ws\paper_and_technique_share_publish diff --check
-git -C D:\claude_code_ws\paper_and_technique_share_publish add Technique\speculative_decoding_technique_comparison_glm52_report_20260721.md Technique\html\speculative-decoding-technique-comparison-glm52-260721\index.html Technique\tools\build_speculative_decoding_html.py Technique\README.md
+git -C D:\claude_code_ws\paper_and_technique_share_publish add Technique\md Technique\html\<report-slug> Technique\tools\<build-script>.py Technique\index.html Technique\html\index.html Technique\README.md
 git -C D:\claude_code_ws\paper_and_technique_share_publish commit -m "update technique report docs"
 git -C D:\claude_code_ws\paper_and_technique_share_publish push origin kimi
 git -C D:\claude_code_ws\paper_and_technique_share_publish push origin kimi:main
