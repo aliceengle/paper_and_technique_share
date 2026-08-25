@@ -185,6 +185,16 @@ def render_html(title: str, article: str, toc_html: str) -> str:
     }}
     h2 {{ margin: 2.7rem 0 1rem; padding-bottom: .6rem; border-bottom: 1px solid var(--border); font-size: 1.46rem; }}
     .article-body > h2:first-child {{ margin-top: 0; }}
+    .article-body img {{
+      display: block;
+      width: auto;
+      max-width: min(100%, 960px);
+      height: auto;
+      margin: 18px auto 10px;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: #fff;
+    }}
     h3 {{ margin: 1.8rem 0 .65rem; font-size: 1.08rem; }}
     h4 {{ margin: 1.25rem 0 .45rem; font-size: 1rem; }}
     p {{ margin: 0 0 1rem; }}
