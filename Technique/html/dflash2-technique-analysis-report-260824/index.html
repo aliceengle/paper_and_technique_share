@@ -665,6 +665,133 @@ $$</p>
 </table></div>
 <p>需要特别说明：本地 <code>dflash_generate</code> 每轮只调用一次 draft model forward。这里的 block diffusion 是“以 mask block 为输入做整块并行预测”的建模方式，不表示推理时要执行多轮昂贵的逐步扩散去噪。</p>
 <h3 id="5-2-分组动态因果短卷积">5.2 分组动态因果短卷积</h3>
+<h4>5.2.1 为什么需要注入动态因果短卷积</h4>
+<p>DFlash 的并行 Attention 同时承担两项不同尺度的工作：</p>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>工作</th>
+<th>需要建模的信息</th>
+<th>对 draft block 的作用</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>读取 block 前上下文</td>
+<td>已验证 prefix、target 多层 hidden、问题与历史语义</td>
+<td>决定整个 block 接下来大致应该生成什么</td>
+</tr>
+<tr>
+<td>建模 block 内依赖</td>
+<td>当前 block 内不同 mask slot，尤其是相邻位置之间的关系</td>
+<td>让后位置延续前位置，减少 suffix 位置相互不一致</td>
+</tr>
+</tbody>
+</table></div>
+<p>这两项工作共用同一组 Attention head。可将官方博客统计的某层某个 head 的 block 内注意力比例理解为：</p>
+<p>$$
+r_{l,h}
+=
+\frac{
+\sum_{q\in\mathcal B}\sum_{k\in\mathcal B}A_{l,h}(q,k)
+}{
+\sum_{q\in\mathcal B}\sum_{k\in\mathcal C\cup\mathcal B}A_{l,h}(q,k)
+},
+$$</p>
+<p>其中 $\mathcal B$ 表示当前 draft block，$\mathcal C$ 表示 block 之前的上下文，$A_{l,h}(q,k)$ 表示第 $l$ 层、第 $h$ 个 head 从 query $q$ 分配给 key $k$ 的注意力。$r_{l,h}$ 越大，说明该 head 越多参与 block 内位置关系建模；这里的公式用于解释指标语义，不替代博客未公开的具体聚合代码。</p>
+<p>官方博客的 <a href="https://inco.ai/blog/dflash2/#figure-3">Figure 3</a> 展示五层 Qwen3-4B DFlash 的逐 head 结果：</p>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>图中元素</th>
+<th>含义</th>
+<th>应该怎样阅读</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>横轴 1～32</td>
+<td>32 个 Attention head</td>
+<td>每一列是一个 head，不是一个 draft token</td>
+</tr>
+<tr>
+<td>纵轴 Layer 1～5</td>
+<td>五个 draft Transformer layer</td>
+<td>从上到下观察深度增加后的职责变化</td>
+</tr>
+<tr>
+<td>单元格亮度</td>
+<td>对当前 draft block 的 attention share</td>
+<td>越亮表示越关注 block 内部；越暗表示越偏向 block 前上下文</td>
+</tr>
+<tr>
+<td>整行平均趋势</td>
+<td>block 内 attention mass</td>
+<td>从 Layer 1 的约 30% 降到 Layer 5 的约 8%</td>
+</tr>
+</tbody>
+</table></div>
+<p>因此 Figure 3 <strong>不是 token 对 token 的 Attention 矩阵</strong>。它的一个方格代表“某层的某个 head”，而不是两个 token 之间的一条注意力边。图中有两个同时发生的现象：</p>
+<ol>
+<li>越到深层，整行总体越暗，说明 Attention 越来越偏向读取 block 前的 target context。</li>
+<li>剩余的 block 内 attention 集中到越来越少的亮格，即原文所说的 <code>a shrinking handful of heads</code>。它表示局部关系越来越依赖少数专门化 head，不是模型真的删除了 Attention head。</li>
+</ol>
+<p>30% 降到 8% 不能单独证明模型错误，也不表示这个比例越高越好；它揭示的是职责分配不稳定：DFlash 希望后续 mask slot 获得前驱信息，但深层网络没有为这项短程工作保留一条稳定、专用的计算通路。若少数专门化 head 没有捕获正确的邻接关系，后段 hidden 与 logits 就更容易失配，表现为 suffix Recall 和 acceptance 衰减。</p>
+<div class="mermaid">flowchart TB
+    C1["block 前 context"] --&gt; A1["DFlash Attention"]
+    B1["block 内位置依赖"] --&gt; A1
+    A1 --&gt; R1["同一模块兼顾长上下文与短程依赖；职责竞争"]
+    R1 --&gt; DIV["DFlash 2 拆分职责"]
+
+    DIV --&gt; A2["Attention：主要读取 target context"]
+    DIV --&gt; CV["动态因果短卷积：显式传递当前位置与左邻信息"]
+    A2 --&gt; H2["融合后的 block hidden"]
+    CV --&gt; H2
+    H2 --&gt; SEL["Path Selector：在 top 16 中选择前驱一致路径"]
+
+    classDef context fill:#EAF3FF,stroke:#3274D9,color:#102A43,stroke-width:1.5px;
+    classDef issue fill:#FFF4E5,stroke:#E78B22,color:#4A2A00,stroke-width:1.5px;
+    classDef core fill:#EAF8F0,stroke:#16A36A,color:#12372A,stroke-width:1.5px;
+    classDef select fill:#F3EEFF,stroke:#7857D8,color:#2E1A66,stroke-width:1.5px;
+    class C1,B1,A1,A2 context;
+    class R1,DIV issue;
+    class CV,H2 core;
+    class SEL select;
+</div>
+<p>这正是引入局部卷积的直接动机。一个 draft block 通常只有 4～16 个位置，最紧密的依赖集中在相邻位置，因此不必增加昂贵的完整自回归 drafter；两点卷积即可提供显式的左邻信息通路：</p>
+<p>$$
+\operatorname{Conv}_{k}(x)_i
+=k_{i,0}\odot x_i+k_{i,1}\odot x_{i-1}.
+$$</p>
+<p>DFlash 2 将其实现为随输入变化的分组动态因果短卷积，并放在每层 Attention 与 MLP 的前后。它只读取当前位置和左侧位置，不读取未来位置；因此既补充 block 内 hidden-space 局部依赖，又不会把一次并行 backbone forward 退化成逐 token 重跑 Transformer。下一节的 $\beta+\Delta$ 公式是这一两点卷积的完整实现形式。</p>
+<p>一个看似反直觉但非常关键的结果是：加入 convolution 后，Layers 4～5 的平均 block 内 Attention 反而从 9.4% 进一步降到 0.5%，同时后段 Recall 与 acceptance 改善。官方解释不是“Attention 更不会看 block 了”，而是局部卷积已经接管短程信息传播，Attention 可以把更多容量用于 target context。这说明目标不是提高 block attention share，而是为局部依赖指定一个稳定且低成本的负责模块；该结果是支持职责拆分的行为证据，不应扩张成严格的因果证明。</p>
+<p>动态卷积与 selector 解决的也不是同一个问题：</p>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>模块</th>
+<th>所在空间</th>
+<th>解决的问题</th>
+<th>无法单独解决的问题</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>动态因果短卷积</td>
+<td>Hidden space</td>
+<td>把 anchor/左邻表示逐层注入后位置，提高 block 后段表示与候选集合质量</td>
+<td>不决定 top-16 中最终选择哪个离散 token</td>
+</tr>
+<tr>
+<td>Path Selector</td>
+<td>Candidate space</td>
+<td>用实际已选 predecessor 在每个位置的 top-16 中选择条件一致的 token</td>
+<td>若正确 token 已掉出 top-16，selector 无法把它重新召回</td>
+</tr>
+</tbody>
+</table></div>
+<p>因此，局部卷积负责“让正确延续仍有机会进入候选集合”，selector 负责“在已有候选中走出一条连贯 path”。两者分别处理表示质量和离散路径一致性，不能互相替代。</p>
+<h4>5.2.2 严谨算子定义</h4>
 <p>对一个 <code>GroupedDynamicCausalConv</code> 实例，设其 <code>prepare</code> 输入为
 $U\in\mathbb{R}^{B\times L\times D}$。先由无偏置线性层生成两条分支的动态修正：</p>
 <p>$$
@@ -749,7 +876,7 @@ $$</p>
 </tbody>
 </table></div>
 <p>简略地说，$\beta$ 是每个 channel 的默认局部混合权重，$\Delta$ 是根据当前输入生成的上下文相关修正；二者在索引后都是标量。Prepare 使用分支 0 先混合子层输入，finish 使用 prepare 时已经生成并缓存的分支 1 再混合子层输出。</p>
-<h4>5.2.1 张量如何组织</h4>
+<h4>5.2.3 张量如何组织</h4>
 <p>Qwen3.8-27B-DFlash2 的公开配置为：</p>
 <p>$$
 D=5120,\qquad S=16,\qquad G=\frac{5120}{16}=320,
@@ -841,7 +968,7 @@ $$</p>
 [1,1,320,16]+[B,8,320,1]\rightarrow[B,8,320,16]
 $$</p>
 <p><code>base</code> 沿 batch 和位置维广播，<code>dynamic</code> 沿组内 16 个 channel 广播。因此完整张量 shape 虽然不同，但公式中的 $\beta_{r,t,g,s}$ 与 $\Delta_{b,i,r,t,g}$ 在完成索引后都是标量。</p>
-<h4>5.2.2 prepare 与 finish 如何包裹子层</h4>
+<h4>5.2.4 prepare 与 finish 如何包裹子层</h4>
 <p>下面给出 Qwen3.8-27B-DFlash2 <strong>单个 <code>Qwen3DFlashDecoderLayer</code></strong> 的完整数据流。其 hidden size 为 5120，正常 block 长度为 8；图中所有主干 hidden 的 shape 均保持 $[B,8,5120]$。</p>
 <div class="mermaid">flowchart TB
     X0["Layer 输入 X0；B × 8 × 5120"] --&gt; RA["保存 Attention residual"]
@@ -982,7 +1109,7 @@ $$</p>
 </tr>
 </tbody>
 </table></div>
-<h4>5.2.3 参数量边界</h4>
+<h4>5.2.5 参数量边界</h4>
 <p>单个动态卷积包含两条长度为 $k$ 的静态核，以及一个 $D\rightarrow 2kG$ 的无偏置投影：</p>
 <p>$$
 P_{conv}=2kD+D\left(2kG\right),\qquad G=\frac{D}{S}
@@ -1023,7 +1150,6 @@ $$</p>
 </tbody>
 </table></div>
 <p>博客中的 <code>+16.5M</code> 来自五层 Qwen3-4B matched ablation，不是上述 27B/30B 发布 checkpoint 的参数量。不同 hidden size 下动态投影的主项近似按 $D^2/S$ 增长，不能把 ablation 数字直接套到发布模型。</p>
-<p>博客还观察到 DFlash 的 block 内 attention mass 从 Layer 1 的约 <code>30%</code> 降到 Layer 5 的约 <code>8%</code>；加入 convolution 后，Layers 4–5 的平均 block 内 attention 从 <code>9.4%</code> 降到 <code>0.5%</code>。官方解释是短卷积接管了局部依赖，attention 可以更多读取 block 之前的 target context。这是行为相关性证据，不应扩张成严格的因果归因证明。</p>
 <h3 id="5-3-前驱条件候选选择器">5.3 前驱条件候选选择器</h3>
 <p>Draft backbone 输出 hidden $h_i$ 后，先通过共享 target LM head 得到每个位置的 unary logits，再保留候选集：</p>
 <p>$$

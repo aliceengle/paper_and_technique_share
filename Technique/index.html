@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>技术报告分享入口</title>
-  <meta name="description" content="Kimi 系列技术时间线、Kimi K3 核心技术、speculative decoding 与 DFlash 2 报告入口">
+  <meta name="description" content="Kimi 系列技术时间线、Kimi K3 核心技术、speculative decoding、DFlash2、Domino 与 Draft 训练框架报告入口。">
   <style>
     :root {
       --bg: #eef3f7;
@@ -264,12 +264,46 @@
             <span class="tag">Serving</span>
           </div>
           <h2>DFlash 2 技术分析报告</h2>
-          <p>分析 DFlash 2 如何保持并行草稿生成，同时补足块内因果依赖，并梳理训练目标、推理流程和工程落地边界。</p>
+          <p>保持并行草稿生成，同时补足块内因果依赖，覆盖训练目标、推理流程和部署边界。</p>
           <span class="open">打开报告页</span>
         </div>
         <div class="meta">
           <span>入口：<code>html/dflash2-technique-analysis-report-260824/</code></span>
           <span>内容：架构拆解、算法流程、与 Medusa/EAGLE/SpecInfer 对比、部署注意事项</span>
+        </div>
+      </a>
+      <a class="card" href="html/domino-technique-analysis-report-260826/">
+        <div>
+          <div class="tag-row">
+            <span class="tag">Domino</span>
+            <span class="tag">Draft</span>
+            <span class="tag">Causal</span>
+            <span class="tag">Ablation</span>
+          </div>
+          <h2>Domino 技术分析报告</h2>
+          <p>分析 Domino 如何从自回归 Drafting 中解耦因果建模，覆盖架构、训练目标、推理流程和系统影响。</p>
+          <span class="open">打开报告页</span>
+        </div>
+        <div class="meta">
+          <span>入口：<code>html/domino-technique-analysis-report-260826/</code></span>
+          <span>内容：论文架构、因果依赖解耦、训练/消融、与 DFlash2 等方案对比</span>
+        </div>
+      </a>
+      <a class="card" href="html/speculative-draft-training-framework-comparison-report-260825/">
+        <div>
+          <div class="tag-row">
+            <span class="tag">Draft</span>
+            <span class="tag">Training</span>
+            <span class="tag">Framework</span>
+            <span class="tag">GLM</span>
+          </div>
+          <h2>Draft 模型训练框架调研</h2>
+          <p>对比 Speculators、SpecForge、TorchSpec 与 NeMo AutoModel，梳理数据格式、训练流程、工程复杂度和选型建议。</p>
+          <span class="open">打开报告页</span>
+        </div>
+        <div class="meta">
+          <span>入口：<code>html/speculative-draft-training-framework-comparison-report-260825/</code></span>
+          <span>内容：训练框架能力矩阵、落地成本、适配 GLM/vLLM 的建议</span>
         </div>
       </a>
 

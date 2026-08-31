@@ -1,0 +1,2442 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Domino 技术分析报告：从自回归 Drafting 中解耦因果建模</title>
+  <meta name="description" content="Domino 技术分析：自回归 Drafting、因果建模解耦、训练目标与推理部署">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Noto+Sans+SC:wght@300;400;500;600;700&family=Source+Serif+4:opsz,wght@8..60,500;8..60,600;8..60,700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.21/dist/katex.min.css">
+  <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.21/dist/katex.min.js"></script>
+  <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.21/dist/contrib/auto-render.min.js"
+    onload="renderMathInElement(document.body, {delimiters:[{left:'$$',right:'$$',display:true},{left:'$',right:'$',display:false}], throwOnError:false});"></script>
+  <script defer src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
+  <style>
+    :root {
+      --bg: #f5f7fa;
+      --panel: #ffffff;
+      --panel-soft: #f8fafc;
+      --ink: #14202b;
+      --ink-2: #435260;
+      --ink-3: #7d8996;
+      --border: #dbe4ec;
+      --accent: #176f73;
+      --accent-2: #476fa8;
+      --accent-bg: rgba(23, 111, 115, .08);
+      --measure: 1180px;
+      --font-serif: "Source Serif 4", "Noto Sans SC", Georgia, serif;
+      --font-sans: "Noto Sans SC", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      --font-mono: "IBM Plex Mono", "Noto Sans SC", monospace;
+    }
+    *, *::before, *::after { box-sizing: border-box; }
+    html { scroll-behavior: smooth; font-size: 17px; }
+    body {
+      margin: 0;
+      color: var(--ink-2);
+      background: linear-gradient(180deg, #fbfdff 0, var(--bg) 520px), var(--bg);
+      font-family: var(--font-sans);
+      line-height: 1.76;
+      -webkit-font-smoothing: antialiased;
+    }
+    a { color: var(--accent); text-decoration-color: rgba(23,111,115,.28); text-underline-offset: 3px; }
+    a:hover { text-decoration-color: var(--accent); }
+    .progress-bar { position: fixed; inset: 0 0 auto 0; height: 3px; z-index: 100; }
+    .progress-bar .fill { height: 100%; width: 0; background: linear-gradient(90deg, var(--accent), var(--accent-2)); }
+    .page { max-width: var(--measure); margin: 0 auto; padding: 50px 28px 76px; }
+    .hero { padding: 24px 0 30px; border-bottom: 1px solid var(--border); margin-bottom: 24px; }
+    .eyebrow {
+      color: var(--accent);
+      font: 600 .78rem/1.4 var(--font-mono);
+      letter-spacing: .03em;
+      text-transform: uppercase;
+      margin-bottom: .6rem;
+    }
+    h1, h2, h3, h4 { color: var(--ink); font-family: var(--font-serif); line-height: 1.34; }
+    h1 { max-width: 940px; margin: 0 0 .9rem; font-size: clamp(2rem, 4vw, 3.35rem); font-weight: 700; }
+    .lead { max-width: 850px; margin: 0; color: var(--ink-2); font-size: 1.04rem; }
+    .topline { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 18px; }
+    .pill {
+      display: inline-flex;
+      align-items: center;
+      min-height: 30px;
+      padding: 4px 10px;
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      background: var(--panel);
+      color: var(--ink-2);
+      font-size: .86rem;
+    }
+    .article-body {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 28px;
+      box-shadow: 0 16px 40px rgba(20, 32, 43, .06);
+    }
+    h2 { margin: 2.7rem 0 1rem; padding-bottom: .6rem; border-bottom: 1px solid var(--border); font-size: 1.46rem; }
+    .article-body > h2:first-child { margin-top: 0; }
+    .article-body img {
+      display: block;
+      width: auto;
+      max-width: min(100%, 960px);
+      height: auto;
+      margin: 18px auto 10px;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: #fff;
+    }
+    h3 { margin: 1.8rem 0 .65rem; font-size: 1.08rem; }
+    h4 { margin: 1.25rem 0 .45rem; font-size: 1rem; }
+    p { margin: 0 0 1rem; }
+    blockquote {
+      margin: 1rem 0 1.2rem;
+      padding: .85rem 1rem;
+      border-left: 4px solid var(--accent);
+      background: var(--accent-bg);
+      border-radius: 0 8px 8px 0;
+    }
+    code {
+      font-family: var(--font-mono);
+      font-size: .86em;
+      background: #edf4f7;
+      color: #20303c;
+      border: 1px solid rgba(190,205,218,.62);
+      border-radius: 4px;
+      padding: 1px 5px;
+    }
+    pre {
+      overflow-x: auto;
+      padding: 1rem;
+      background: #101820;
+      color: #e8eef3;
+      border-radius: 8px;
+      line-height: 1.58;
+    }
+    pre code { background: transparent; border: 0; color: inherit; padding: 0; }
+    ul, ol { padding-left: 1.35rem; margin: .35rem 0 1.15rem; }
+    li { margin: .2rem 0; }
+    .table-wrap {
+      overflow-x: auto;
+      margin: 1rem 0 1.35rem;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: #fff;
+    }
+    table { width: 100%; min-width: 760px; border-collapse: collapse; font-size: .91rem; }
+    th, td { padding: .64rem .72rem; border-bottom: 1px solid var(--border); vertical-align: top; }
+    th { background: var(--panel-soft); color: var(--ink); font-weight: 600; text-align: left; }
+    tr:nth-child(even) td { background: #fbfcfd; }
+    tr:last-child td { border-bottom: 0; }
+    .mermaid {
+      margin: 1rem 0 1.35rem;
+      padding: 1rem;
+      background: var(--panel-soft);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      overflow-x: auto;
+      text-align: center;
+    }
+    .mermaid svg {
+      display: block;
+      max-width: 100%;
+      height: auto;
+      margin: 0 auto;
+    }
+    .toc {
+      position: sticky;
+      top: 18px;
+      float: right;
+      width: 250px;
+      max-height: calc(100vh - 36px);
+      overflow: auto;
+      margin: 0 -282px 20px 24px;
+      padding: 14px;
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      background: rgba(255, 255, 255, .9);
+      backdrop-filter: blur(10px);
+      font-size: .78rem;
+    }
+    .toc-label { color: var(--ink-3); font: 600 .72rem/1 var(--font-mono); margin-bottom: .6rem; }
+    .toc ul { list-style: none; margin: 0; padding: 0; }
+    .toc a { display: block; padding: .22rem 0; color: var(--ink-3); text-decoration: none; }
+    .toc li.level-3 a { padding-left: .8rem; font-size: .74rem; }
+    .toc a.active { color: var(--accent); }
+    @media (max-width: 1720px) { .toc { display: none; } }
+    @media (max-width: 720px) {
+      html { font-size: 16px; }
+      .page { padding: 32px 14px 56px; }
+      .article-body { padding: 18px; border-radius: 10px; }
+      table { min-width: 640px; }
+    }
+    @media print {
+      .progress-bar, .toc { display: none !important; }
+      body { background: #fff; }
+      .page { max-width: none; padding: 0; }
+      .article-body { box-shadow: none; border: 0; padding: 0; }
+    }
+  </style>
+</head>
+<body>
+  <div class="progress-bar"><div class="fill" id="progressFill"></div></div>
+  <main class="page">
+    <header class="hero">
+      <div class="eyebrow">Speculative Decoding / GLM-5.2</div>
+      <h1>Domino 技术分析报告：从自回归 Drafting 中解耦因果建模</h1>
+      <p class="lead">Domino 技术分析：自回归 Drafting、因果建模解耦、训练目标与推理部署</p>
+      <div class="topline">
+        <span class="pill">Domino</span>
+        <span class="pill">自回归 Drafting</span>
+        <span class="pill">因果解耦</span>
+        <span class="pill">推理部署</span>
+      </div>
+    </header>
+    <nav class="toc" aria-label="文章目录">
+      <div class="toc-label">目录</div>
+      <ul id="tocList">
+        <li class="level-2"><a href="#1-结论摘要">1. 结论摘要</a></li>
+<li class="level-2"><a href="#2-官方架构图-证据范围与版本边界">2. 官方架构图、证据范围与版本边界</a></li>
+<li class="level-3"><a href="#2-1-论文原始架构图">2.1 论文原始架构图</a></li>
+<li class="level-3"><a href="#2-2-一手资料与核验版本">2.2 一手资料与核验版本</a></li>
+<li class="level-3"><a href="#2-3-结论标记">2.3 结论标记</a></li>
+<li class="level-2"><a href="#3-提出动机-因果依赖有用-但不必由-backbone-顺序执行">3. 提出动机：因果依赖有用，但不必由 Backbone 顺序执行</a></li>
+<li class="level-3"><a href="#3-1-投机解码的质量-成本平衡">3.1 投机解码的质量—成本平衡</a></li>
+<li class="level-3"><a href="#3-2-自回归-drafter-与并行-drafter-的矛盾">3.2 自回归 Drafter 与并行 Drafter 的矛盾</a></li>
+<li class="level-3"><a href="#3-3-解耦-具体解耦了什么">3.3 “解耦”具体解耦了什么</a></li>
+<li class="level-2"><a href="#4-整体架构与一轮推理数据流">4. 整体架构与一轮推理数据流</a></li>
+<li class="level-3"><a href="#4-1-中文重绘架构图">4.1 中文重绘架构图</a></li>
+<li class="level-3"><a href="#4-2-一轮-decode-的操作顺序">4.2 一轮 Decode 的操作顺序</a></li>
+<li class="level-3"><a href="#4-3-domino-是-path-不是-tree">4.3 Domino 是 Path，不是 Tree</a></li>
+<li class="level-2"><a href="#5-核心机制">5. 核心机制</a></li>
+<li class="level-3"><a href="#5-1-parallel-backbone-与-base-logits">5.1 Parallel Backbone 与 Base Logits</a></li>
+<li class="level-3"><a href="#5-2-domino-head-到底长什么样">5.2 Domino Head 到底长什么样</a></li>
+<li class="level-3"><a href="#5-3-低秩-logit-correction">5.3 低秩 Logit Correction</a></li>
+<li class="level-3"><a href="#5-4-候选-path-如何逐位置产生">5.4 候选 Path 如何逐位置产生</a></li>
+<li class="level-3"><a href="#5-5-参数量为什么约为-56m">5.5 参数量为什么约为 56M</a></li>
+<li class="level-3"><a href="#5-6-计算复杂度与真正的顺序临界路径">5.6 计算复杂度与真正的顺序临界路径</a></li>
+<li class="level-3"><a href="#5-7-论文公式到公开代码的映射">5.7 论文公式到公开代码的映射</a></li>
+<li class="level-2"><a href="#6-训练方法-只学习-可被接受的前缀">6. 训练方法：只学习“可被接受的前缀”</a></li>
+<li class="level-3"><a href="#6-1-为什么采用-teacher-forcing">6.1 为什么采用 Teacher Forcing</a></li>
+<li class="level-3"><a href="#6-2-为什么-teacher-forcing-还不够">6.2 为什么 Teacher Forcing 还不够</a></li>
+<li class="level-3"><a href="#6-3-训练流程图">6.3 训练流程图</a></li>
+<li class="level-3"><a href="#6-4-论文训练配置">6.4 论文训练配置</a></li>
+<li class="level-2"><a href="#7-推理-验证与系统优化">7. 推理、验证与系统优化</a></li>
+<li class="level-3"><a href="#7-1-greedy-验证为何保持结果一致">7.1 Greedy 验证为何保持结果一致</a></li>
+<li class="level-3"><a href="#7-2-sampling-验证为何保持分布一致">7.2 Sampling 验证为何保持分布一致</a></li>
+<li class="level-3"><a href="#7-3-一轮验证时序">7.3 一轮验证时序</a></li>
+<li class="level-3"><a href="#7-4-triton-与-cuda-graph-做了什么">7.4 Triton 与 CUDA Graph 做了什么</a></li>
+<li class="level-2"><a href="#8-论文第-5-节实验与消融分析">8. 论文第 5 节实验与消融分析</a></li>
+<li class="level-3"><a href="#8-1-评测口径">8.1 评测口径</a></li>
+<li class="level-3"><a href="#8-2-transformers-主结果-domino-对-dflash">8.2 Transformers 主结果：Domino 对 DFlash</a></li>
+<li class="level-3"><a href="#8-3-figure-1-与-figure-2-的-headline-结果">8.3 Figure 1 与 Figure 2 的 Headline 结果</a></li>
+<li class="level-3"><a href="#8-4-同数据对比-排除训练数据优势">8.4 同数据对比：排除训练数据优势</a></li>
+<li class="level-3"><a href="#8-5-training-strategy-消融">8.5 Training Strategy 消融</a></li>
+<li class="level-3"><a href="#8-6-domino-head-消融">8.6 Domino Head 消融</a></li>
+<li class="level-3"><a href="#8-7-sglang-高并发吞吐">8.7 SGLang 高并发吞吐</a></li>
+<li class="level-3"><a href="#8-8-第-5-节实验能证明什么-不能证明什么">8.8 第 5 节实验能证明什么、不能证明什么</a></li>
+<li class="level-2"><a href="#9-与其他-draft-方法的机制对比">9. 与其他 Draft 方法的机制对比</a></li>
+<li class="level-3"><a href="#9-1-dflash-domino-dspark-与-dflash-2">9.1 DFlash、Domino、DSpark 与 DFlash 2</a></li>
+<li class="level-3"><a href="#9-2-与-eagle-3-的根本区别">9.2 与 EAGLE-3 的根本区别</a></li>
+<li class="level-3"><a href="#9-3-与-dominotree-的边界">9.3 与 DominoTree 的边界</a></li>
+<li class="level-3"><a href="#9-4-效果数字为什么不能跨论文直接排名">9.4 效果数字为什么不能跨论文直接排名</a></li>
+<li class="level-2"><a href="#10-公开实现与复现状态">10. 公开实现与复现状态</a></li>
+<li class="level-3"><a href="#10-1-官方-domino-仓库">10.1 官方 Domino 仓库</a></li>
+<li class="level-3"><a href="#10-2-specforge-训练实现">10.2 SpecForge 训练实现</a></li>
+<li class="level-2"><a href="#11-技术优势-局限性与风险">11. 技术优势、局限性与风险</a></li>
+<li class="level-3"><a href="#11-1-技术优势">11.1 技术优势</a></li>
+<li class="level-3"><a href="#11-2-论文明确或可以直接推出的局限">11.2 论文明确或可以直接推出的局限</a></li>
+<li class="level-3"><a href="#11-3-复现时最容易犯的错误">11.3 复现时最容易犯的错误</a></li>
+<li class="level-2"><a href="#12-技术评价">12. 技术评价</a></li>
+<li class="level-2"><a href="#13-公开链接与参考资料">13. 公开链接与参考资料</a></li>
+      </ul>
+    </nav>
+    <article class="article-body">
+
+<blockquote>
+<p>论文：<a href="https://arxiv.org/abs/2605.29707">Domino: Decoupling Causal Modeling from Autoregressive Drafting in Speculative Decoding</a></p>
+<p>版本边界：arXiv v1，2026-05-28；重点核对论文第 4、5 节与附录 A</p>
+<p>报告日期：2026-08-26</p>
+<p>分析范围：只讨论 Domino 的技术动机、结构、训练、推理、系统优化、实验和方法边界，不展开具体业务模型适配</p>
+</blockquote>
+<h2 id="1-结论摘要">1. 结论摘要</h2>
+<p>Domino 的核心不是“把并行 drafter 改回自回归”，而是把两个原本绑定在一起的工作拆开：</p>
+<ul>
+<li><strong>长上下文与整块语义建模</strong>仍由 DFlash 风格的 block-parallel backbone 一次完成；</li>
+<li><strong>块内前驱依赖</strong>交给一个轻量 GRU 和低秩 logit correction head 顺序补入；</li>
+<li>顺序阶段不重复运行 draft backbone，也不重复执行基础 LM head，只更新小状态并计算残差；</li>
+<li>最终生成的是一条 predecessor-conditioned <strong>path</strong>，不是 tree；target 仍按标准 speculative decoding 验证最长前缀，因此不改变 target 的输出分布。</li>
+</ul>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>问题</th>
+<th>Domino 的处理</th>
+<th>论文证据</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>自回归 drafter 质量高但顺序成本随候选长度增长</td>
+<td>Backbone 只运行一次，把顺序依赖压缩到轻量 Domino head</td>
+<td>第 3、4 节</td>
+</tr>
+<tr>
+<td>DFlash 并行快，但各位置缺少真实前驱条件</td>
+<td>GRU 汇总已选择 token，低秩 head 对当前位置 base logits 做全词表残差修正</td>
+<td>第 4.1 节、Figure 3</td>
+</tr>
+<tr>
+<td>直接训练 correction 容易让 backbone 退化</td>
+<td>Teacher forcing 对齐 accepted-prefix 场景，再用 base-anchored curriculum 先稳住 base prediction</td>
+<td>第 4.2 节、Figure 4</td>
+</tr>
+<tr>
+<td>轻量顺序循环容易被 kernel launch 和小算子开销吞没</td>
+<td>Triton 融合 correction 与 argmax，并用 CUDA Graph 固定执行图</td>
+<td>第 4.3 节</td>
+</tr>
+<tr>
+<td>收益是否来自更多数据或更大模型</td>
+<td>论文给出同数据对比、训练策略消融和 head 消融</td>
+<td>第 5.3 节、Tables 3–4</td>
+</tr>
+</tbody>
+</table></div>
+<p>论文在 Figure 1 的统一 Qwen3-8B 设置下报告：Domino 相对 DFlash 增加 <strong>56M 参数（+5.3%）</strong>、总 draft-then-verify 延迟增加 <strong>2.8%</strong>，但平均接受长度提高 <strong>16.6%</strong>、端到端加速提高 <strong>12.3%</strong>。这一结果说明其有效点不只是“多加一个 GRU”，而是把因果质量增益放在远小于 backbone 的顺序路径上。</p>
+<blockquote>
+<p><strong>一句话判断：</strong> Domino 找到了 DFlash 与 EAGLE 类方法之间的中间点——保留一次并行 backbone 的低 draft latency，同时用小型顺序状态恢复真正的前驱条件；其主要剩余问题是 full-vocabulary correction 仍有带宽成本，而且原始方法只有一条 path，早期候选错误会使后续整段失去验证价值。</p>
+</blockquote>
+<h2 id="2-官方架构图-证据范围与版本边界">2. 官方架构图、证据范围与版本边界</h2>
+<h3 id="2-1-论文原始架构图">2.1 论文原始架构图</h3>
+<p><img alt="Domino 论文 Figure 3 架构图" src="assets/domino_paper_architecture_2605.29707v1.png"/></p>
+<p>图源：论文 arXiv v1 Figure 3。上半部分表示 parallel backbone 一次产生整块 hidden states 与 base logits；下半部分表示 Domino head 根据此前已经采样的 draft token 更新 causal state，并生成 correction logits $c_i$，当前位置最终从 $l_i+c_i$ 中选择 token。</p>
+<h3 id="2-2-一手资料与核验版本">2.2 一手资料与核验版本</h3>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>资料</th>
+<th>本报告用途</th>
+<th>核验边界</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><a href="https://arxiv.org/html/2605.29707v1">arXiv HTML v1</a></td>
+<td>公式、图表、实验、消融和限制的事实主源</td>
+<td>论文首版，不把后续代码新增模型写成论文实验</td>
+</tr>
+<tr>
+<td><a href="https://arxiv.org/pdf/2605.29707v1">arXiv PDF v1</a></td>
+<td>版面、公式和表格交叉核对</td>
+<td>与 HTML 同一版本</td>
+</tr>
+<tr>
+<td><a href="https://github.com/jianuo-huang/Domino">官方 Domino 仓库</a></td>
+<td>模型张量流、Transformers/SGLang 推理入口、Triton/CUDA Graph 实现</td>
+<td>核验 commit <code>44e1e6912ba9d301899739a54bfda2ce8826980a</code></td>
+</tr>
+<tr>
+<td><a href="https://huggingface.co/collections/Huang2020/domino">Domino 模型集合</a></td>
+<td>公开 checkpoint 与模型支持状态</td>
+<td>页面状态截至 2026-08-26</td>
+</tr>
+<tr>
+<td><a href="https://github.com/sgl-project/SpecForge">SpecForge</a></td>
+<td>Domino 公开训练实现与配置入口</td>
+<td>核验 HEAD <code>cb0ebfa5ab1cac81031d917150f15dd4e81f0833</code></td>
+</tr>
+</tbody>
+</table></div>
+<p>论文第 5 节只评测 Qwen3-4B 与 Qwen3-8B。官方仓库在论文发布后又列出 Qwen3.6 checkpoint，这说明代码继续演进，但不能倒推为 arXiv v1 已验证的实验结论。</p>
+<h3 id="2-3-结论标记">2.3 结论标记</h3>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>标记</th>
+<th>含义</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>论文事实</strong></td>
+<td>论文正文、附录、表格或图中直接给出</td>
+</tr>
+<tr>
+<td><strong>代码事实</strong></td>
+<td>在上述固定 commit 的实现中可直接定位</td>
+</tr>
+<tr>
+<td><strong>分析推导</strong></td>
+<td>由论文公式或代码形状推导，文中明确写出前提</td>
+</tr>
+</tbody>
+</table></div>
+<h2 id="3-提出动机-因果依赖有用-但不必由-backbone-顺序执行">3. 提出动机：因果依赖有用，但不必由 Backbone 顺序执行</h2>
+<h3 id="3-1-投机解码的质量-成本平衡">3.1 投机解码的质量—成本平衡</h3>
+<p>设 target 自回归生成一个 token 的平均延迟为 $L_{\text{target}}$，一轮 speculative decoding 的 draft 与 verification 时间分别为 $T_{\text{draft}}$、$T_{\text{verify}}$，一轮平均推进 token 数为 $\tau$。论文使用的单 token 延迟与加速比可写为：</p>
+<p>$$
+L_{\text{spec}}
+=
+\frac{T_{\text{draft}}+T_{\text{verify}}}{\tau},
+$$</p>
+<p>$$
+\eta
+=
+\frac{\tau L_{\text{target}}}
+{T_{\text{draft}}+T_{\text{verify}}}.
+$$</p>
+<p>这两个式子说明，优化只提高接受长度并不够：如果为了增加 $\tau$ 而显著抬高 $T_{\text{draft}}$，端到端加速仍可能下降。</p>
+<h3 id="3-2-自回归-drafter-与并行-drafter-的矛盾">3.2 自回归 Drafter 与并行 Drafter 的矛盾</h3>
+<p>给定上下文 $x_{\le t}$ 和候选预算 $\gamma$，自回归 drafter 显式建模：</p>
+<p>$$
+q_{\text{AR}}\left(x_{t+1:t+\gamma}\mid x_{\le t}\right)
+=
+\prod_{i=1}^{\gamma}
+q\left(x_{t+i}\mid x_{&lt;t+i}\right).
+$$</p>
+<p>它的主要 draft 时间近似为：</p>
+<p>$$
+T_{\text{draft}}^{\text{AR}}
+\approx
+\gamma\left(t_{\text{net}}+t_{\text{head}}\right).
+$$</p>
+<p>其中 $t_{\text{net}}$ 是一次 draft network forward，$t_{\text{head}}$ 是一次词表投影。因果条件完整，但两项都随 $\gamma$ 顺序重复。</p>
+<p>并行 drafter 则一次生成整块：</p>
+<p>$$
+q_{\text{PAR}}\left(x_{t+1:t+\gamma}\mid x_{\le t}\right),
+$$</p>
+<p>$$
+T_{\text{draft}}^{\text{PAR}}
+\approx
+t_{\text{net}}^{\text{block}}
++t_{\text{head}}^{\text{block}}.
+$$</p>
+<p>它消除了 $\gamma$ 次 backbone/head 调用，却弱化了第 $i$ 个位置对真实已选择前驱 $x_{t+1:t+i-1}$ 的条件依赖。</p>
+<p>论文 Figure 1 在 Qwen3-8B、A100、context length 1024、speculative budget 16、相同训练数据的设置下给出这个矛盾：</p>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>方法</th>
+<th>Draft 依赖方式</th>
+<th style="text-align:right">平均接受长度</th>
+<th style="text-align:right">端到端加速</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>EAGLE-3</td>
+<td>自回归 rollout，并构造候选树</td>
+<td style="text-align:right">4.86</td>
+<td style="text-align:right">3.28×</td>
+</tr>
+<tr>
+<td>DFlash</td>
+<td>整块并行生成</td>
+<td style="text-align:right">4.03</td>
+<td style="text-align:right">3.42×</td>
+</tr>
+</tbody>
+</table></div>
+<p>EAGLE-3 的候选质量更高，但 draft 与 tree 开销抵消了一部分收益；DFlash 更便宜，但缺少块内真实前驱条件。Domino 的问题定义因此非常精确：<strong>保留 DFlash 的一次 block-parallel backbone，只把因果依赖补回来。</strong></p>
+<h3 id="3-3-解耦-具体解耦了什么">3.3 “解耦”具体解耦了什么</h3>
+<div class="mermaid">flowchart TB
+    Q["草稿质量与草稿成本冲突"] --&gt; A["长上下文语义建模"]
+    Q --&gt; B["块内前驱因果建模"]
+
+    A --&gt; C["并行 Draft Backbone"]
+    B --&gt; D["轻量 Domino Head"]
+
+    C --&gt; E["整块 Hidden 与 Base Logits"]
+    D --&gt; F["顺序 Causal State 与 Logit Residual"]
+    E --&gt; G["条件化候选 Path"]
+    F --&gt; G
+    G --&gt; H["Target 并行验证"]
+
+    classDef question fill:#FFF4E5,stroke:#E78B22,color:#4A2A00,stroke-width:1.5px;
+    classDef parallel fill:#EAF3FF,stroke:#3274D9,color:#102A43,stroke-width:1.5px;
+    classDef causal fill:#EAF8F0,stroke:#16A36A,color:#12372A,stroke-width:1.5px;
+    classDef verify fill:#F3EEFF,stroke:#7857D8,color:#2E1A66,stroke-width:1.5px;
+    class Q question;
+    class A,C,E parallel;
+    class B,D,F,G causal;
+    class H verify;
+</div>
+<p>这里不是把因果建模删除，而是改变它的承载模块：</p>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>职责</th>
+<th>原自回归 Drafter</th>
+<th>Domino</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>读取长上下文</td>
+<td>每个候选位置重复运行 backbone</td>
+<td>并行 backbone 一次完成</td>
+</tr>
+<tr>
+<td>产生基础词表分布</td>
+<td>每个位置重复 LM head</td>
+<td>整块批量执行一次 frozen target LM head</td>
+</tr>
+<tr>
+<td>读取已生成前驱</td>
+<td>Backbone 自回归 attention</td>
+<td>小型 GRU state</td>
+</tr>
+<tr>
+<td>根据前驱改变当前位置分布</td>
+<td>整个 drafter 重新 forward</td>
+<td>低秩 logit residual</td>
+</tr>
+</tbody>
+</table></div>
+<h2 id="4-整体架构与一轮推理数据流">4. 整体架构与一轮推理数据流</h2>
+<h3 id="4-1-中文重绘架构图">4.1 中文重绘架构图</h3>
+<div class="mermaid">flowchart TB
+    subgraph CTX["阶段一：Target 上下文"]
+        direction LR
+        X["已确认上下文"] --&gt; TF["Target Prefill 或上轮 Verify"]
+        TF --&gt; C["选定层上下文特征"]
+    end
+
+    subgraph PAR["阶段二：一次并行草稿"]
+        direction LR
+        M["Anchor Token 加 Mask Block"] --&gt; BB["五层 Parallel Backbone"]
+        C --&gt; BB
+        BB --&gt; H["整块 Hidden States"]
+        H --&gt; LH["冻结的 Target LM Head"]
+        LH --&gt; LB["整块 Base Logits"]
+    end
+
+    subgraph COR["阶段三：轻量顺序修正"]
+        direction LR
+        P["已实现前驱 Token"] --&gt; GRU["GRU Causal State"]
+        GRU --&gt; CR["低秩 Logit Correction"]
+        H --&gt; CR
+        LB --&gt; ADD["Base 加 Correction"]
+        CR --&gt; ADD
+        ADD --&gt; Y["选择当前 Token"]
+        Y --&gt; P
+    end
+
+    subgraph VER["阶段四：无损验证"]
+        direction LR
+        Y --&gt; PATH["单条候选 Path"]
+        PATH --&gt; V["Target 一次并行 Verify"]
+        V --&gt; OK["提交最长可接受前缀"]
+    end
+
+    classDef context fill:#EAF3FF,stroke:#3274D9,color:#102A43,stroke-width:1.5px;
+    classDef parallel fill:#E8F7F2,stroke:#16A36A,color:#12372A,stroke-width:1.5px;
+    classDef causal fill:#FFF4E5,stroke:#E78B22,color:#4A2A00,stroke-width:1.5px;
+    classDef verify fill:#F3EEFF,stroke:#7857D8,color:#2E1A66,stroke-width:1.5px;
+    class X,TF,C context;
+    class M,BB,H,LH,LB parallel;
+    class P,GRU,CR,ADD,Y causal;
+    class PATH,V,OK verify;
+</div>
+<p>图中真正昂贵的 Draft Backbone 和基础 LM Head 都在阶段二整块运行一次。阶段三虽然有顺序反馈环，但反馈环只包含 GRU、低秩 correction 和采样，不包含完整 backbone。</p>
+<h3 id="4-2-一轮-decode-的操作顺序">4.2 一轮 Decode 的操作顺序</h3>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th style="text-align:right">顺序</th>
+<th>操作</th>
+<th>是否整块并行</th>
+<th>是否随候选位置顺序重复</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align:right">1</td>
+<td>从 target 获取上下文特征 $C_t$</td>
+<td>是</td>
+<td>否</td>
+</tr>
+<tr>
+<td style="text-align:right">2</td>
+<td>构造 anchor token 与 mask block</td>
+<td>是</td>
+<td>否</td>
+</tr>
+<tr>
+<td style="text-align:right">3</td>
+<td>Parallel backbone 产生 $H_1,\ldots,H_\gamma$</td>
+<td>是</td>
+<td>否</td>
+</tr>
+<tr>
+<td style="text-align:right">4</td>
+<td>Frozen target LM head 产生全部 $L_i^{\text{base}}$</td>
+<td>是</td>
+<td>否</td>
+</tr>
+<tr>
+<td style="text-align:right">5</td>
+<td>GRU 读取已知前驱，产生状态 $S_{i-1}$</td>
+<td>否</td>
+<td>是，但模块很小</td>
+</tr>
+<tr>
+<td style="text-align:right">6</td>
+<td>计算 $\Delta L_i$，从 $L_i^{\text{base}}+\Delta L_i$ 选择 $y_i$</td>
+<td>否</td>
+<td>是，但不重跑 backbone</td>
+</tr>
+<tr>
+<td style="text-align:right">7</td>
+<td>Target 验证整条 $y_{1:\gamma}$</td>
+<td>是</td>
+<td>否</td>
+</tr>
+<tr>
+<td style="text-align:right">8</td>
+<td>接受最长前缀并继续下一轮</td>
+<td>—</td>
+<td>—</td>
+</tr>
+</tbody>
+</table></div>
+<h3 id="4-3-domino-是-path-不是-tree">4.3 Domino 是 Path，不是 Tree</h3>
+<p>Domino 在深度 $i$ 只保留一个已经实现的前驱序列：</p>
+<p>$$
+y_{1:i-1}=(y_1,y_2,\ldots,y_{i-1}).
+$$</p>
+<p>GRU state $S_{i-1}$ 只对应这条序列，当前位置再选择一个 $y_i$。最终候选拓扑是：</p>
+<p>$$
+y_1\rightarrow y_2\rightarrow\cdots\rightarrow y_\gamma.
+$$</p>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>容易混淆的现象</th>
+<th>正确解释</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>每个位置都有完整词表 logits</td>
+<td>这只是下一 token 分布，不等于保留多个分支</td>
+</tr>
+<tr>
+<td>论文对比 EAGLE-3 tree</td>
+<td>EAGLE-3 的验证候选是 tree；Domino 的原始候选是 path</td>
+</tr>
+<tr>
+<td>GRU 能根据不同前驱得到不同状态</td>
+<td>原始推理只沿已选择 path 更新一个状态，不同时展开多个状态</td>
+</tr>
+<tr>
+<td>后续存在 DominoTree</td>
+<td>DominoTree 才沿多个真实父路径复制或更新 correction state，不能反写进 Domino 原方法</td>
+</tr>
+</tbody>
+</table></div>
+<h2 id="5-核心机制">5. 核心机制</h2>
+<h3 id="5-1-parallel-backbone-与-base-logits">5.1 Parallel Backbone 与 Base Logits</h3>
+<p>论文先构造带 anchor 的 masked block：</p>
+<p>$$
+\widetilde{x}_{t:t+B-1}
+=
+[x_t,[\mathrm{MASK}],\ldots,[\mathrm{MASK}]],
+$$</p>
+<p>再把 target 上下文特征 $C_t$ 与 masked block embedding 输入并行 backbone：</p>
+<p>$$
+H_{t:t+B-1}
+=
+\operatorname{Backbone}
+\left(C_t,\operatorname{Embed}(\widetilde{x}_{t:t+B-1})\right).
+$$</p>
+<p>所有候选位置的基础 logits 由冻结的 target LM head 一次计算：</p>
+<p>$$
+L_i^{\text{base}}
+=
+\operatorname{LMHead}(H_i).
+$$</p>
+<p>这里冻结 target LM head 有两个作用：</p>
+<ol>
+<li>让 draft hidden state 对齐 target 原始词表空间；</li>
+<li>使基础词表投影可以整块批量完成，而不是塞进后续顺序循环。</li>
+</ol>
+<p>为了避免论文的下标约定造成 shape 理解困难，下表统一用：batch size 为 $N$、候选长度为 $\gamma$、hidden size 为 $d$、词表大小为 $V$。</p>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>张量</th>
+<th>Shape</th>
+<th>含义</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>论文 masked block ids</td>
+<td>$[N,B]$</td>
+<td>一个 anchor 与其余 mask slots；$B$ 是论文输入块长度</td>
+</tr>
+<tr>
+<td>target context feature $C_t$</td>
+<td>实现相关，末维通常为多个 target layer hidden 的拼接</td>
+<td>给 draft backbone 注入长上下文信息</td>
+</tr>
+<tr>
+<td>对齐后的 candidate hidden $H$</td>
+<td>$[N,\gamma,d]$</td>
+<td>去除 anchor/shift 对齐后，$\gamma$ 个候选槽一次产生</td>
+</tr>
+<tr>
+<td>base logits $L^{\text{base}}$</td>
+<td>$[N,\gamma,V]$</td>
+<td>Frozen target LM head 的整块输出</td>
+</tr>
+</tbody>
+</table></div>
+<p>这里刻意区分 $B$ 与 $\gamma$：论文公式用 $B$ 描述含 anchor 的 masked 输入区间，runtime 的 <code>block_size</code>、<code>shift_label</code> 决定如何把它对齐成 $\gamma$ 个 proposal slots。讨论 head shape 时只使用对齐后的 $[N,\gamma,d]$，避免把 anchor 误算成一个候选 token。</p>
+<h3 id="5-2-domino-head-到底长什么样">5.2 Domino Head 到底长什么样</h3>
+<p>论文把 Domino head 概括为“causal encoder + low-rank correction head”。官方代码把这两个部件具体实现为：</p>
+<pre><code class="language-python">self.prefix_gru = nn.GRU(
+    input_size=config.hidden_size,
+    hidden_size=self.gru_hidden_dim,
+    num_layers=1,
+    batch_first=True,
+    bias=False,
+)
+
+self.embed_proj = nn.Sequential(
+    nn.Linear(config.hidden_size + self.gru_hidden_dim, self.emb_dim, bias=False),
+    nn.SiLU(),
+    nn.Linear(self.emb_dim, config.vocab_size, bias=False),
+)
+</code></pre>
+<p>因此 Domino head 不是一个 attention block，也不是另一套小 Transformer。它只有：</p>
+<ol>
+<li>一个单层、单向、无 bias 的 GRU；</li>
+<li>一个 $d+d_s\rightarrow r\rightarrow V$ 的两层 MLP；</li>
+<li>推理时把当前采样 token 反馈给 GRU 的顺序控制流。</li>
+</ol>
+<p>代码变量名 <code>embed_proj</code> 容易造成误解：它并不负责生成 token embedding，而是把“parallel hidden 与 GRU state 的拼接”投影成词表维度的 <strong>correction logits</strong>。Token embedding 直接复用冻结 target 的 <code>target.model.embed_tokens</code>。</p>
+<h4>5.2.1 Domino Head 完整张量流</h4>
+<div class="mermaid">flowchart TB
+    subgraph INIT["前缀状态初始化"]
+        direction LR
+        IDS["Anchor 与已有 Draft Prefix"] --&gt; EMB["冻结的 Target Token Embedding"]
+        EMB --&gt; GRU["单层无 Bias GRU"]
+        ZERO["零初态"] --&gt; GRU
+        GRU --&gt; STATE["当前 Causal State"]
+    end
+
+    subgraph STEP["第 i 个候选槽的顺序修正"]
+        direction LR
+        HID["Parallel Hidden H_i"] --&gt; CAT["拼接 H_i 与 State"]
+        STATE --&gt; CAT
+        CAT --&gt; FC1["Linear 到低秩维度"]
+        FC1 --&gt; ACT["SiLU"]
+        ACT --&gt; FC2["Linear 到完整词表"]
+        FC2 --&gt; CORR["Correction Logits"]
+        BASE["Base Logits"] --&gt; ADD["Base 加 Correction"]
+        CORR --&gt; ADD
+        ADD --&gt; TOK["采样当前 Token"]
+    end
+
+    TOK --&gt; NEXT["Target Token Embedding"]
+    NEXT --&gt; GRU
+
+    classDef input fill:#EAF3FF,stroke:#3274D9,color:#102A43,stroke-width:1.5px;
+    classDef state fill:#EAF8F0,stroke:#16A36A,color:#12372A,stroke-width:1.5px;
+    classDef correction fill:#FFF4E5,stroke:#E78B22,color:#4A2A00,stroke-width:1.5px;
+    classDef output fill:#F3EEFF,stroke:#7857D8,color:#2E1A66,stroke-width:1.5px;
+    class IDS,EMB,ZERO,HID,BASE,NEXT input;
+    class GRU,STATE state;
+    class CAT,FC1,ACT,FC2,CORR correction;
+    class ADD,TOK output;
+</div>
+<p>在第 $i$ 个槽，parallel backbone 已经给出当前位置 hidden $H_i$ 和 base logits $L_i^{\text{base}}$。GRU 不重新读取长上下文，而只把“anchor 之后已经实际选择了什么”压缩成 state $S_{i-1}$。两者在低秩 MLP 中汇合：</p>
+<p>$$
+H_i\quad\text{负责当前位置的并行语义，}
+\qquad
+S_{i-1}\quad\text{负责已实现候选路径的因果历史。}
+$$</p>
+<h4>5.2.2 Qwen3-8B Domino Head 的真实权重 Shape</h4>
+<p>公开 Qwen3-8B Domino checkpoint 的配置为：</p>
+<p>$$
+d=4096,
+\qquad
+d_s=1024,
+\qquad
+r=256,
+\qquad
+V=151936.
+$$</p>
+<p>本报告不仅根据配置推导 shape，还直接读取了公开 <code>model.safetensors</code> 的 header。四个权重张量均为 BF16：</p>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>Checkpoint Key</th>
+<th style="text-align:right">一般 Shape</th>
+<th style="text-align:right">Qwen3-8B 实际 Shape</th>
+<th>作用</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>prefix_gru.weight_ih_l0</code></td>
+<td style="text-align:right">$[3d_s,d]$</td>
+<td style="text-align:right">$[3072,4096]$</td>
+<td>Token embedding 到三组 GRU 门的输入投影</td>
+</tr>
+<tr>
+<td><code>prefix_gru.weight_hh_l0</code></td>
+<td style="text-align:right">$[3d_s,d_s]$</td>
+<td style="text-align:right">$[3072,1024]$</td>
+<td>旧 state 到三组 GRU 门的递归投影</td>
+</tr>
+<tr>
+<td><code>embed_proj.0.weight</code></td>
+<td style="text-align:right">$[r,d+d_s]$</td>
+<td style="text-align:right">$[256,5120]$</td>
+<td>拼接特征压缩到低秩维度</td>
+</tr>
+<tr>
+<td><code>embed_proj.2.weight</code></td>
+<td style="text-align:right">$[V,r]$</td>
+<td style="text-align:right">$[151936,256]$</td>
+<td>低秩表示恢复为完整词表 residual</td>
+</tr>
+</tbody>
+</table></div>
+<p>Checkpoint 中没有 <code>prefix_gru.bias_*</code> 或 <code>embed_proj.*.bias</code>，与代码中的 <code>bias=False</code> 一致。冻结 target token embedding 的 shape 为 $[V,d]=[151936,4096]$，但它是 target 参数复用，不计入 Domino head 的 56M 新增参数。</p>
+<p>普通 PyTorch 路径中的主要张量 shape 为：</p>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>阶段</th>
+<th style="text-align:right">输入 Shape</th>
+<th style="text-align:right">输出 Shape</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Prefix token embedding</td>
+<td style="text-align:right">ids $[N,P]$</td>
+<td style="text-align:right">embeddings $[N,P,d]$</td>
+</tr>
+<tr>
+<td><code>prefix_gru</code></td>
+<td style="text-align:right">$[N,P,d]$</td>
+<td style="text-align:right">sequence output $[N,P,d_s]$，final hidden $[1,N,d_s]$</td>
+</tr>
+<tr>
+<td>当前槽 state 对齐</td>
+<td style="text-align:right">final hidden $[1,N,d_s]$</td>
+<td style="text-align:right">$S_{i-1}:[N,1,d_s]$</td>
+</tr>
+<tr>
+<td>与 parallel hidden 拼接</td>
+<td style="text-align:right">$H_i:[N,1,d]$、$S_{i-1}:[N,1,d_s]$</td>
+<td style="text-align:right">$[N,1,d+d_s]$</td>
+</tr>
+<tr>
+<td>第一层 projection</td>
+<td style="text-align:right">$[N,1,d+d_s]$</td>
+<td style="text-align:right">$[N,1,r]$</td>
+</tr>
+<tr>
+<td>第二层 projection</td>
+<td style="text-align:right">$[N,1,r]$</td>
+<td style="text-align:right">$\Delta L_i:[N,1,V]$</td>
+</tr>
+</tbody>
+</table></div>
+<p>其中 $P$ 是初始化 GRU 时已经实现的 prefix token 数，包含 anchor；公开 checkpoint 还会包含一个 base-only draft token，详见 5.2.4。</p>
+<h4>5.2.3 GRU Cell 内部的三组门</h4>
+<p>设 GRU 当前读入的 token embedding 为：</p>
+<p>$$
+e_j\in\mathbb{R}^{N\times d},
+$$</p>
+<p>读入它之前的旧状态为：</p>
+<p>$$
+s_{j-1}\in\mathbb{R}^{N\times d_s}.
+$$</p>
+<p>代码先做两次线性投影：</p>
+<p>$$
+g_j^{(x)}
+=
+e_jW_{ih}^{\mathsf T}
+\in\mathbb{R}^{N\times3d_s},
+$$</p>
+<p>$$
+g_j^{(h)}
+=
+s_{j-1}W_{hh}^{\mathsf T}
+\in\mathbb{R}^{N\times3d_s}.
+$$</p>
+<p>再严格按 PyTorch GRU 的 reset、update、new 顺序切成三块：</p>
+<p>$$
+g_j^{(x)}=[g_{ir},g_{iz},g_{in}],
+\qquad
+g_j^{(h)}=[g_{hr},g_{hz},g_{hn}].
+$$</p>
+<p>由于所有 bias 都关闭，实际门控公式就是：</p>
+<p>$$
+r_j
+=
+\sigma(g_{ir}+g_{hr}),
+$$</p>
+<p>$$
+z_j
+=
+\sigma(g_{iz}+g_{hz}),
+$$</p>
+<p>$$
+n_j
+=
+\tanh\left(g_{in}+r_j\odot g_{hn}\right),
+$$</p>
+<p>$$
+s_j
+=
+(1-z_j)\odot n_j+z_j\odot s_{j-1}.
+$$</p>
+<p>这里 $r_j$ 是 reset gate，决定旧状态的哪些信息参与候选状态 $n_j$；$z_j$ 是 update gate，决定保留多少旧状态。若 $z_j$ 接近 1，$s_j$ 主要沿用 $s_{j-1}$；若接近 0，则主要采用新候选 $n_j$。</p>
+<blockquote>
+<p>注意：本小节的 $r_j$ 表示 reset gate，不是 correction MLP 的低秩维度 $r=256$。</p>
+</blockquote>
+<div class="mermaid">flowchart TB
+    E["当前 Token Embedding e_j"] --&gt; IX["输入投影 W_ih"]
+    S0["旧状态 s_prev"] --&gt; HH["状态投影 W_hh"]
+
+    IX --&gt; R["Reset Gate r_j"]
+    HH --&gt; R
+    IX --&gt; Z["Update Gate z_j"]
+    HH --&gt; Z
+    IX --&gt; N["New Candidate n_j"]
+    HH --&gt; N
+    R --&gt; N
+
+    Z --&gt; MIX["门控混合"]
+    N --&gt; MIX
+    S0 --&gt; MIX
+    MIX --&gt; S1["新状态 s_new"]
+
+    classDef input fill:#EAF3FF,stroke:#3274D9,color:#102A43,stroke-width:1.5px;
+    classDef gate fill:#FFF4E5,stroke:#E78B22,color:#4A2A00,stroke-width:1.5px;
+    classDef state fill:#EAF8F0,stroke:#16A36A,color:#12372A,stroke-width:1.5px;
+    class E,IX,HH input;
+    class R,Z,N,MIX gate;
+    class S0,S1 state;
+</div>
+<p>这个 state 不是 KV cache，也不是一串 token 的无损存储。它是一个 1024 维的有损因果摘要：通过门控选择，保留对后续候选分布最有用的 path 信息。</p>
+<h4>5.2.4 Anchor、初态和第一个候选如何进入 GRU</h4>
+<p><code>nn.GRU</code> 调用没有显式传入 $h_0$ 时，PyTorch 使用全零初态。设当前 target 已确认的最后一个 token 为 anchor $a=x_t$，则论文抽象结构的第一步是：</p>
+<p>$$
+S_A
+=
+\operatorname{GRUCell}(E(a),0).
+$$</p>
+<p>如果所有未来槽都使用 Domino correction，则第 0 个候选可写为：</p>
+<p>$$
+\Delta L_0
+=
+W_2\operatorname{SiLU}\left(W_1[H_0;S_A]\right),
+$$</p>
+<p>$$
+d_0
+\sim
+\operatorname{Categorical}\!\left(
+\operatorname{Softmax}\left(L_0^{\text{base}}+\Delta L_0\right)
+\right).
+$$</p>
+<p>但公开 Qwen3-4B/8B checkpoint 的实际配置是：</p>
+<pre><code class="language-text">shift_label = true
+pure_draft_prefix_len = 1
+</code></pre>
+<p>因此真实代码会先用第 0 槽 base logits 直接得到一个 pure-draft token：</p>
+<p>$$
+d_0
+\sim
+\operatorname{Categorical}\!\left(
+\operatorname{Softmax}\left(L_0^{\text{base}}\right)
+\right),
+$$</p>
+<p>然后一次性把 $[a,d_0]$ 的 embedding 输入 <code>prefix_gru</code>：</p>
+<p>$$
+S_A
+=
+\operatorname{GRUCell}(E(a),0),
+$$</p>
+<p>$$
+S_0
+=
+\operatorname{GRUCell}(E(d_0),S_A).
+$$</p>
+<p>第一轮 correction 从槽 1 开始：</p>
+<p>$$
+\Delta L_1
+=
+W_2\operatorname{SiLU}\left(W_1[H_1;S_0]\right).
+$$</p>
+<p>后续每一步遵循“先用旧 state 选 token，再把新 token 写入 state”：</p>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th style="text-align:right">顺序</th>
+<th>当前已知内容</th>
+<th>操作</th>
+<th>得到的结果</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align:right">0</td>
+<td>Verified anchor $a$</td>
+<td>第 0 槽只读 base logits</td>
+<td>$d_0$</td>
+</tr>
+<tr>
+<td style="text-align:right">1</td>
+<td>$a,d_0$</td>
+<td>从零初态运行 prefix GRU</td>
+<td>$S_0$</td>
+</tr>
+<tr>
+<td style="text-align:right">2</td>
+<td>$H_1,L_1^{\text{base}},S_0$</td>
+<td>计算 correction 并采样</td>
+<td>$d_1$</td>
+</tr>
+<tr>
+<td style="text-align:right">3</td>
+<td>$d_1,S_0$</td>
+<td>单步 GRU 更新</td>
+<td>$S_1$</td>
+</tr>
+<tr>
+<td style="text-align:right">4</td>
+<td>$H_2,L_2^{\text{base}},S_1$</td>
+<td>计算下一槽 correction</td>
+<td>$d_2$</td>
+</tr>
+<tr>
+<td style="text-align:right">…</td>
+<td>…</td>
+<td>重复 correction、采样、状态更新</td>
+<td>单条条件 path</td>
+</tr>
+</tbody>
+</table></div>
+<p><code>pure_draft_prefix_len=1</code> 是公开 checkpoint 的实现选择，不改变 Domino 的核心定义。它的直接效果是让最前槽保持 base-only，并省去一次 correction；所核对的论文和代码没有单独给出“为什么固定为 1”的消融，因此不能把进一步的动机推测写成论文事实。报告实验或复现时必须记录该配置，不能只写“block size 16”。</p>
+<h4>5.2.5 训练与推理为什么使用同一个 GRU，却有不同执行形态</h4>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>阶段</th>
+<th>前驱 Token 是否已知</th>
+<th>GRU 调用方式</th>
+<th>Correction 计算方式</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Teacher-forced training</td>
+<td>是，全部来自 ground truth/target answer</td>
+<td>把 $[N,\text{blocks},\gamma,d]$ reshape 为 $[N\cdot\text{blocks},\gamma,d]$，一次 batched sequence call 返回全部 states</td>
+<td>对所有 block/位置批量计算</td>
+</tr>
+<tr>
+<td>普通 inference</td>
+<td>否，下一前驱取决于当前采样结果</td>
+<td>Prefix 一次初始化；之后每采样一个 token 调一次单步 GRU</td>
+<td>按 path 逐槽计算</td>
+</tr>
+<tr>
+<td>Fused greedy inference</td>
+<td>否</td>
+<td>手写 GRUCell kernel，逐槽更新</td>
+<td>Triton 融合 correction、base add 与 argmax</td>
+</tr>
+</tbody>
+</table></div>
+<p>Teacher forcing 使一整段 GRU 输入在 forward 开始前就已知，因此训练代码可以一次提交整段 tensor；但 GRU 在时间维上的数学递推仍然存在，只是由框架内部实现，不应误写成各时间位置完全独立。</p>
+<p>SpecForge 的训练实现还严格对齐 previous token 与 label。<code>shift_label=true</code> 时：</p>
+<ul>
+<li><code>target_ids</code> 收集 anchor 之后的监督 token；</li>
+<li><code>prev_ids</code> 从 anchor 开始收集同样长度的真实前驱序列；</li>
+<li>第 $j$ 个 correction state 只读取到该 label 的真实前驱，不读取当前 label 或未来 token。</li>
+</ul>
+<p>这正是论文所说的 teacher forcing，而不是把完整答案提前泄漏给当前位置。</p>
+<h4>5.2.6 Fused Runner 如何保持与 PyTorch GRU 等价</h4>
+<p>Correction 第一层权重可以按输入拼接边界拆成：</p>
+<p>$$
+W_1=[W_H,W_S],
+$$</p>
+<p>因此：</p>
+<p>$$
+W_1[H_i;S_{i-1}]
+=
+W_H\,H_i+W_S\,S_{i-1}.
+$$</p>
+<p>官方 fused runner 先对全部候选槽并行预计算：</p>
+<p>$$
+Z_H
+=
+H\,W_H^{\mathsf T}
+\in\mathbb{R}^{N\times\gamma\times r},
+$$</p>
+<p>顺序循环中只增加当前 state 分支：</p>
+<p>$$
+Z_{S,i}
+=
+S_{i-1}W_S^{\mathsf T}
+\in\mathbb{R}^{N\times r}.
+$$</p>
+<p>随后将以下操作融合：</p>
+<p>$$
+\operatorname{SiLU}(Z_{H,i}+Z_{S,i})
+\rightarrow W_2
+\rightarrow +L_i^{\text{base}}
+\rightarrow \arg\max.
+$$</p>
+<p>GRU 输入侧也预计算：</p>
+<p>$$
+T_{\text{GRU-in}}
+=
+E_{\text{vocab}}W_{ih}^{\mathsf T}
+\in\mathbb{R}^{V\times3d_s}.
+$$</p>
+<p>运行时只根据新 token id gather 一行 $g^{(x)}$，再实时计算旧 state 的 $g^{(h)}$，最后调用与 5.2.3 完全相同的四个门控公式。对 Qwen3-8B，预计算表为 $[151936,3072]$，若按 BF16 保存约占 890 MiB；它是以显存换逐 token GEMV 的 runtime buffer，不是 checkpoint 参数。</p>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>普通 PyTorch 路径</th>
+<th>Fused Greedy 路径</th>
+<th>数学语义</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>nn.GRU</code></td>
+<td>手写 Triton GRUCell</td>
+<td>相同 reset/update/new 门与相同权重</td>
+</tr>
+<tr>
+<td><code>torch.cat</code> 后执行第一层 Linear</td>
+<td>预拆 $W_H/W_S$ 并分别投影</td>
+<td>由线性可加性严格等价</td>
+</tr>
+<tr>
+<td>SiLU、第二层 Linear、base add、argmax 分开</td>
+<td>两级 Triton kernel 融合</td>
+<td>输出 token 相同</td>
+</tr>
+<tr>
+<td>Python 循环发起小算子</td>
+<td>CUDA Graph 固定 buffer 与 steps</td>
+<td>只改变调度开销</td>
+</tr>
+</tbody>
+</table></div>
+<p>这条 fused 路径当前明确假设 greedy decoding、固定 batch size 和固定 steps；sampling 仍需保留 proposal 概率与拒绝采样语义，不能直接套用只输出 argmax token 的 runner。</p>
+<h3 id="5-3-低秩-logit-correction">5.3 低秩 Logit Correction</h3>
+<p>5.2 已经从代码角度展开了完整 head；这里用统一代数形式总结 GRU state 如何进入词表修正。</p>
+<p>对第 $i$ 个候选位置，Domino 拼接并行 hidden 与此前的 GRU state：</p>
+<p>$$
+Z_i=[H_i;S_{i-1}]
+\in\mathbb{R}^{d+d_s}.
+$$</p>
+<p>随后用两层低秩 MLP 产生词表维度残差：</p>
+<p>$$
+\Delta L_i
+=
+W_2\operatorname{SiLU}\left(W_1Z_i\right),
+$$</p>
+<p>$$
+L_i
+=
+L_i^{\text{base}}+\Delta L_i.
+$$</p>
+<p>其 shape 为：</p>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>对象</th>
+<th>Shape</th>
+<th>作用</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>$H_i$</td>
+<td>$[N,d]$</td>
+<td>当前槽的并行语义表示</td>
+</tr>
+<tr>
+<td>$S_{i-1}$</td>
+<td>$[N,d_s]$</td>
+<td>已实现前驱 path 的因果状态</td>
+</tr>
+<tr>
+<td>$Z_i$</td>
+<td>$[N,d+d_s]$</td>
+<td>两类信息的拼接</td>
+</tr>
+<tr>
+<td>$W_1$</td>
+<td>$[r,d+d_s]$</td>
+<td>压缩到低秩瓶颈 $r$</td>
+</tr>
+<tr>
+<td>中间表示</td>
+<td>$[N,r]$</td>
+<td>论文实现 $r=256$</td>
+</tr>
+<tr>
+<td>$W_2$</td>
+<td>$[V,r]$</td>
+<td>恢复为词表残差</td>
+</tr>
+<tr>
+<td>$L_i$</td>
+<td>$[N,V]$</td>
+<td>最终 proposal 分布的 logits</td>
+</tr>
+</tbody>
+</table></div>
+<p>论文选择在 logit space 修正，而不是先顺序修正 hidden 再调用完整 target LM head。二者的关键成本差异是：</p>
+<ul>
+<li>base LM head 的大矩阵乘已经对 $\gamma$ 个位置批量完成一次；</li>
+<li>顺序阶段只处理维度为 $r=256$ 的中间表示；</li>
+<li>$W_2$ 仍输出完整词表，因此它不是零成本，但相比重新运行 backbone 和 $d\rightarrow V$ 的完整 head 更轻。</li>
+</ul>
+<h3 id="5-4-候选-path-如何逐位置产生">5.4 候选 Path 如何逐位置产生</h3>
+<p>在 greedy 模式下，一轮 Domino head 可抽象为：</p>
+<pre><code class="language-text">输入：整块 H，整块 BaseLogits，anchor
+配置：prefix_len = pure_draft_prefix_len
+
+prefix_tokens = sample(BaseLogits[0:prefix_len])
+state = GRU(Embedding([anchor] + prefix_tokens), zero_state)
+
+for i = prefix_len ... gamma - 1:
+    correction_i = LowRankHead(H_i, state)
+    logits_i = BaseLogits_i + correction_i
+    y_i = argmax(logits_i)
+    if i + 1 &lt; gamma:
+        state = GRUCell(Embedding(y_i), state)
+
+输出：base-only prefix 加 corrected suffix 组成的单条候选 path
+</code></pre>
+<p>公开 Qwen3 checkpoint 中 <code>prefix_len=1</code>；若配置为 0，prefix 只含 anchor，correction 从第 0 个候选槽开始。Sampling 模式把 <code>argmax</code> 换成从 proposal $q_i$ 采样；后续 target 仍使用标准 rejection sampling 保证分布正确。关键点是 corrected suffix 的 $q_i$ 依赖此前实际采样的 $y_{&lt;i}$，不再是各位置互不相干的 marginal proposal。</p>
+<h3 id="5-5-参数量为什么约为-56m">5.5 参数量为什么约为 56M</h3>
+<p><strong>分析推导：</strong> 代码与 checkpoint 均确认 <code>bias=False</code>，因此单层 GRU 与 correction MLP 的新增参数为：</p>
+<p>$$
+P_{\text{GRU}}
+=
+3\left(dd_s+d_s^2\right),
+$$</p>
+<p>$$
+P_{\text{corr}}
+=
+r(d+d_s)+Vr.
+$$</p>
+<p>对论文 Qwen3-8B 对应的 $d=4096$、$d_s=1024$、$r=256$、$V=151936$：</p>
+<p>$$
+P_{\text{GRU}}
+=
+15{,}728{,}640,
+$$</p>
+<p>$$
+P_{\text{corr}}
+=
+40{,}206{,}336,
+$$</p>
+<p>$$
+P_{\text{Domino head}}
+\approx
+55{,}934{,}976
+\approx
+56\text{M}.
+$$</p>
+<p>这与论文 Figure 1 的 56M 一致。论文所说的 <strong>+5.3%</strong> 是相对对应 draft model 的参数增量，不是相对 8B target 的增量。</p>
+<h3 id="5-6-计算复杂度与真正的顺序临界路径">5.6 计算复杂度与真正的顺序临界路径</h3>
+<p>Domino 的 draft 时间可以概括为：</p>
+<p>令 $p$ 为 <code>pure_draft_prefix_len</code>，则更精确的关键路径近似为：</p>
+<p>$$
+T_{\text{draft}}^{\text{Domino}}
+\approx
+t_{\text{net}}^{\text{block}}
++t_{\text{head}}^{\text{block}}
++t_{\text{prefix-state}}
++p\,t_{\text{sample}}
++(\gamma-p)\left(t_{\text{GRU}}+t_{\text{corr}}+t_{\text{sample}}\right).
+$$</p>
+<p>其中 $t_{\text{prefix-state}}$ 包括 anchor 与 base-only prefix 的初始 GRU 扫描。该式把每个 corrected slot 的状态更新统一计入近似项；最后一个槽无需再为本轮生成下一状态，因此真实调用数会少一个边界更新。</p>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>成本项</th>
+<th>是否顺序</th>
+<th>规模</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Parallel backbone</td>
+<td>否</td>
+<td>主要网络计算，只运行一次</td>
+</tr>
+<tr>
+<td>Base LM head</td>
+<td>否</td>
+<td>$[N,\gamma,d]\rightarrow[N,\gamma,V]$ 批量执行</td>
+</tr>
+<tr>
+<td>GRU update</td>
+<td>是</td>
+<td>每个 corrected suffix 槽约 $O(dd_s+d_s^2)$，实现可预计算输入侧投影</td>
+</tr>
+<tr>
+<td>Correction first projection</td>
+<td>是，但 $H$ 分支可预计算</td>
+<td>每个 corrected suffix 槽约 $O(r(d+d_s))$</td>
+</tr>
+<tr>
+<td>Correction vocabulary projection</td>
+<td>是</td>
+<td>每个 corrected suffix 槽约 $O(Vr)$</td>
+</tr>
+<tr>
+<td>采样或 argmax</td>
+<td>是</td>
+<td>词表 reduction 或 sampling kernel</td>
+</tr>
+</tbody>
+</table></div>
+<p>因此 Domino 的技术判断应写成“<strong>把顺序成本从完整网络降为小状态加低秩词表修正</strong>”，而不是“完全没有顺序成本”。这也解释了为何论文必须专门做 Triton 与 CUDA Graph 优化。</p>
+<h3 id="5-7-论文公式到公开代码的映射">5.7 论文公式到公开代码的映射</h3>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>论文对象</th>
+<th>核验代码位置</th>
+<th>代码含义</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Parallel backbone</td>
+<td><a href="https://github.com/jianuo-huang/Domino/blob/44e1e6912ba9d301899739a54bfda2ce8826980a/code/dflash.py"><code>dflash.py</code> 的 <code>DFlashDraftModel.layers</code></a></td>
+<td>五层 DFlash 风格 decoder layers</td>
+</tr>
+<tr>
+<td>Domino 模块定义</td>
+<td><a href="https://github.com/jianuo-huang/Domino/blob/44e1e6912ba9d301899739a54bfda2ce8826980a/code/dflash.py#L261-L274"><code>dflash.py</code> L261–L274</a></td>
+<td>单层无 bias GRU 与两层无 bias correction MLP</td>
+</tr>
+<tr>
+<td>Base-only prefix</td>
+<td><a href="https://github.com/jianuo-huang/Domino/blob/44e1e6912ba9d301899739a54bfda2ce8826980a/code/dflash.py#L424-L443"><code>dflash.py</code> L424–L443</a></td>
+<td>先采样 pure prefix，再用 anchor 与 prefix 初始化 GRU</td>
+</tr>
+<tr>
+<td>逐槽 correction</td>
+<td><a href="https://github.com/jianuo-huang/Domino/blob/44e1e6912ba9d301899739a54bfda2ce8826980a/code/dflash.py#L445-L458"><code>dflash.py</code> L445–L458</a></td>
+<td>拼接 hidden/state、加 residual、采样并反馈 token</td>
+</tr>
+<tr>
+<td>Fused GRU 门</td>
+<td><a href="https://github.com/jianuo-huang/Domino/blob/44e1e6912ba9d301899739a54bfda2ce8826980a/code/kernel/domino.py#L178-L226"><code>kernel/domino.py</code> L178–L226</a></td>
+<td>显式实现 reset、update、new 与 state 混合</td>
+</tr>
+<tr>
+<td>Fused 权重与 lookup table</td>
+<td><a href="https://github.com/jianuo-huang/Domino/blob/44e1e6912ba9d301899739a54bfda2ce8826980a/code/kernel/domino.py#L314-L327"><code>kernel/domino.py</code> L314–L327</a></td>
+<td>提取 PyTorch GRU 权重并预计算 embedding 输入投影</td>
+</tr>
+<tr>
+<td>Fused correction rollout</td>
+<td><a href="https://github.com/jianuo-huang/Domino/blob/44e1e6912ba9d301899739a54bfda2ce8826980a/code/kernel/domino.py#L379-L431"><code>kernel/domino.py</code> L379–L431</a></td>
+<td>预计算 hidden 分支，逐槽补 state 分支并更新 GRU</td>
+</tr>
+<tr>
+<td>Teacher-forced training</td>
+<td><a href="https://github.com/sgl-project/SpecForge/blob/cb0ebfa5ab1cac81031d917150f15dd4e81f0833/specforge/modeling/draft/domino.py#L124-L150">SpecForge <code>domino.py</code> L124–L150</a></td>
+<td>整段真实前驱进入同一 GRU，再与 suffix hidden 对齐</td>
+</tr>
+<tr>
+<td>公开权重 shape</td>
+<td><a href="https://huggingface.co/Huang2020/Qwen3-8B-Domino-b16">Qwen3-8B Domino checkpoint</a></td>
+<td>Safetensors header 与代码推导一致，且不存在 bias tensor</td>
+</tr>
+</tbody>
+</table></div>
+<h2 id="6-训练方法-只学习-可被接受的前缀">6. 训练方法：只学习“可被接受的前缀”</h2>
+<h3 id="6-1-为什么采用-teacher-forcing">6.1 为什么采用 Teacher Forcing</h3>
+<p>训练顺序模块有两种直觉方案：</p>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>方案</th>
+<th>前驱来自哪里</th>
+<th>Domino 论文判断</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Training-time testing</td>
+<td>Drafter 自己生成的 token</td>
+<td>会频繁进入错误前缀后的状态</td>
+</tr>
+<tr>
+<td>Teacher forcing</td>
+<td>Ground-truth 或 target-generated token</td>
+<td>与“此前 token 已通过 target 验证”的状态对齐</td>
+</tr>
+</tbody>
+</table></div>
+<p>Speculative decoding 一旦在位置 $j$ 发生不一致，只提交 $j$ 之前的候选；$j$ 之后基于错误前驱生成的 suffix 不会被接受。因此 correction head 真正需要做好的状态是：</p>
+<p>$$
+y_{&lt;i}=x_{&lt;i}^{\text{target}}.
+$$</p>
+<p>让模型花容量学习“错误前缀之后如何继续”不会直接提高这一轮的接受长度，因为第一个错误已经截断整条 suffix。论文据此采用 teacher forcing，把训练输入限制在 accepted-prefix regime。</p>
+<h3 id="6-2-为什么-teacher-forcing-还不够">6.2 为什么 Teacher Forcing 还不够</h3>
+<p>如果只优化最终 logits：</p>
+<p>$$
+L_i=L_i^{\text{base}}+\Delta L_i,
+$$</p>
+<p>强 correction head 可能替代 parallel backbone 的预测职责，使 $L_i^{\text{base}}$ 自身变差。这会形成错误分工：本应负责整块语义的 backbone 退化，而轻量 head 被迫同时承担语义和因果建模。</p>
+<p>Domino 因此联合优化 final loss 与 base loss：</p>
+<p>$$
+\mathcal{L}_t
+=
+(1-\lambda_t)\mathcal{L}_{\text{final}}
++\lambda_t\mathcal{L}_{\text{base}},
+$$</p>
+<p>其中 $\lambda_t$ 随训练从 1 线性下降到 0：</p>
+<ul>
+<li>训练早期：先要求 parallel backbone 独立产生可靠 base logits；</li>
+<li>训练后期：逐渐把重心移到 correction 后的最终 logits；</li>
+<li>结果：head 学的是增量因果残差，而不是绕过 backbone 的主预测器。</li>
+</ul>
+<p>两个 loss 都采用位置指数衰减权重：</p>
+<p>$$
+w_k
+=
+\exp\left(-\frac{k}{\gamma}\right),
+$$</p>
+<p>$$
+\mathcal{L}_{\star}
+=
+\frac{\sum_{k=1}^{\gamma}w_k\operatorname{CE}
+\left(L_k^{\star},x_{t+k}\right)}
+{\sum_{k=1}^{\gamma}w_k},
+\qquad
+\star\in\{\text{base},\text{final}\}.
+$$</p>
+<p>较早位置权重更高的原因是：一次早期不一致会让后面全部候选失去可接受性，因此前段精度对最终 $\tau$ 的影响更大。</p>
+<h3 id="6-3-训练流程图">6.3 训练流程图</h3>
+<div class="mermaid">flowchart TB
+    subgraph DATA["监督数据"]
+        direction LR
+        D["Target 重新生成的答案"] --&gt; GT["Ground Truth 前驱 Token"]
+        D --&gt; Y["当前位置监督 Label"]
+    end
+
+    subgraph MODEL["Domino 前向"]
+        direction LR
+        C["Target Context Feature"] --&gt; B["Parallel Backbone"]
+        B --&gt; H["Hidden States"]
+        H --&gt; BL["Base Logits"]
+        GT --&gt; G["Teacher-forced GRU State"]
+        H --&gt; R["Low-rank Correction"]
+        G --&gt; R
+        BL --&gt; FL["Final Logits"]
+        R --&gt; FL
+    end
+
+    subgraph LOSS["Base-anchored Curriculum"]
+        direction LR
+        BL --&gt; LB["位置加权 Base Loss"]
+        FL --&gt; LF["位置加权 Final Loss"]
+        Y --&gt; LB
+        Y --&gt; LF
+        LB --&gt; MIX["按 Lambda 混合"]
+        LF --&gt; MIX
+        SCH["Lambda 从一降到零"] --&gt; MIX
+    end
+
+    classDef data fill:#EAF3FF,stroke:#3274D9,color:#102A43,stroke-width:1.5px;
+    classDef model fill:#EAF8F0,stroke:#16A36A,color:#12372A,stroke-width:1.5px;
+    classDef loss fill:#FFF4E5,stroke:#E78B22,color:#4A2A00,stroke-width:1.5px;
+    class D,GT,Y data;
+    class C,B,H,BL,G,R,FL model;
+    class LB,LF,MIX,SCH loss;
+</div>
+<h3 id="6-4-论文训练配置">6.4 论文训练配置</h3>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>配置项</th>
+<th>论文设置</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Target models</td>
+<td>Qwen3-4B、Qwen3-8B，训练时冻结</td>
+</tr>
+<tr>
+<td>数据</td>
+<td><code>mlabonne/open-perfectblend</code>，1.42M 样本</td>
+</tr>
+<tr>
+<td>答案来源</td>
+<td>使用对应 target 重新生成全部答案</td>
+</tr>
+<tr>
+<td>Draft backbone</td>
+<td>5 layers</td>
+</tr>
+<tr>
+<td>Block size</td>
+<td>16</td>
+</tr>
+<tr>
+<td>GRU hidden dimension</td>
+<td>1024</td>
+</tr>
+<tr>
+<td>Correction bottleneck</td>
+<td>256</td>
+</tr>
+<tr>
+<td>最大序列长度</td>
+<td>3072</td>
+</tr>
+<tr>
+<td>Epoch</td>
+<td>3</td>
+</tr>
+<tr>
+<td>训练硬件</td>
+<td>8×A100 80GB</td>
+</tr>
+<tr>
+<td>Batch</td>
+<td>每 GPU 2，全局 16，无 gradient accumulation</td>
+</tr>
+<tr>
+<td>Optimizer</td>
+<td>AdamW，learning rate $6\times10^{-4}$，weight decay 0</td>
+</tr>
+<tr>
+<td>Schedule</td>
+<td>Cosine，warmup ratio 0.04</td>
+</tr>
+<tr>
+<td>其他</td>
+<td>BF16、gradient clip 1、FSDP 与 gradient sharding</td>
+</tr>
+</tbody>
+</table></div>
+<p>这个 recipe 并未降低 target answer regeneration 或 draft training 的成本；Domino 的主要节省发生在部署推理阶段。</p>
+<h2 id="7-推理-验证与系统优化">7. 推理、验证与系统优化</h2>
+<h3 id="7-1-greedy-验证为何保持结果一致">7.1 Greedy 验证为何保持结果一致</h3>
+<p>Domino 产生候选 path $y_{1:\gamma}$ 后，target 在一次 forward 中得到每个位置的真实预测。设第一个不一致位置为 $j$：</p>
+<p>$$
+j
+=
+\min\left\{i:y_i\neq\arg\max p_i\right\}.
+$$</p>
+<p>系统提交 $y_{1:j-1}$，并在位置 $j$ 提交 target token；若全部一致，则提交整个候选块并按标准实现推进。Domino 只改变 proposal，最终 token 仍由 target 验证规则决定。</p>
+<h3 id="7-2-sampling-验证为何保持分布一致">7.2 Sampling 验证为何保持分布一致</h3>
+<p>在 sampling 模式中，Domino 给出条件 proposal $q_i(\cdot\mid y_{&lt;i})$，target 给出 $p_i$。标准 rejection sampling 以：</p>
+<p>$$
+a_i
+=
+\min\left(1,\frac{p_i(y_i)}{q_i(y_i)}\right)
+$$</p>
+<p>接受候选；拒绝时从归一化残差分布：</p>
+<p>$$
+p_i'(x)
+\propto
+\max\left(p_i(x)-q_i(x),0\right)
+$$</p>
+<p>采样替代 token。只要 runtime 正确保留 proposal 概率，输出分布就与 target 原始 sampling 一致。</p>
+<h3 id="7-3-一轮验证时序">7.3 一轮验证时序</h3>
+<div class="mermaid">sequenceDiagram
+    participant T as Target
+    participant B as Parallel Backbone
+    participant D as Domino Head
+    participant V as Verifier
+
+    T-&gt;&gt;B: 上下文特征与 Anchor
+    B-&gt;&gt;B: 一次生成整块 Hidden 与 Base Logits
+    B-&gt;&gt;D: 所有位置的 Hidden 和 Base Logits
+    loop 候选位置一到 Gamma
+        D-&gt;&gt;D: 更新 GRU 状态并计算低秩修正
+        D-&gt;&gt;D: 选择当前 Token
+    end
+    D-&gt;&gt;V: 单条条件候选 Path
+    T-&gt;&gt;V: 一次并行 Target Logits
+    V-&gt;&gt;T: 提交最长可接受前缀与 Target Token
+</div>
+<h3 id="7-4-triton-与-cuda-graph-做了什么">7.4 Triton 与 CUDA Graph 做了什么</h3>
+<p>论文报告在 Figure 1 的设置下，Domino head latency 从 <strong>2.64 ms</strong> 降至 <strong>1.20 ms</strong>。官方 kernel 实现对应三类优化：</p>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>优化</th>
+<th>具体做法</th>
+<th>减少的成本</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Correction 融合</td>
+<td>融合 SiLU、第二层词表 GEMV、base-logit 加法和局部 argmax</td>
+<td>中间张量写回和 kernel launch</td>
+</tr>
+<tr>
+<td>两级 Argmax</td>
+<td>每个 vocabulary block 先局部 reduction，再做最终 reduction</td>
+<td>完整词表选择开销</td>
+</tr>
+<tr>
+<td>GRU 输入预计算</td>
+<td>预先计算 embedding table 与 $W_{ih}^{\mathsf T}$ 的乘积</td>
+<td>每步 embedding 后的输入 GEMV</td>
+</tr>
+<tr>
+<td>手写 GRUCell</td>
+<td>直接更新单步 hidden state</td>
+<td>通用 <code>nn.GRU</code> 单 token 调用开销</td>
+</tr>
+<tr>
+<td>CUDA Graph</td>
+<td>固定 batch、steps 和 buffer 后 capture 顺序 rollout</td>
+<td>Python dispatch 与重复 launch overhead</td>
+</tr>
+</tbody>
+</table></div>
+<p>代码中的融合 runner 当前明确假设 greedy/argmax、固定 batch size 和固定 steps。Sampling、动态 batch 或其他 backend 是否能获得同等收益，需要分别验证，不能直接用 1.20 ms 代表所有部署形态。</p>
+<h2 id="8-论文第-5-节实验与消融分析">8. 论文第 5 节实验与消融分析</h2>
+<h3 id="8-1-评测口径">8.1 评测口径</h3>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>维度</th>
+<th>设置</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Target</td>
+<td>Qwen3-4B、Qwen3-8B</td>
+</tr>
+<tr>
+<td>数学</td>
+<td>GSM8K、MATH、AIME25</td>
+</tr>
+<tr>
+<td>代码</td>
+<td>HumanEval、MBPP、LiveCodeBench</td>
+</tr>
+<tr>
+<td>对话</td>
+<td>MT-Bench、Alpaca</td>
+</tr>
+<tr>
+<td>Baselines</td>
+<td>Autoregressive、EAGLE-3、DFlash、DART、FR-Spec</td>
+</tr>
+<tr>
+<td>最大生成长度</td>
+<td>2048</td>
+</tr>
+<tr>
+<td>主硬件</td>
+<td>A100-SXM4-80GB</td>
+</tr>
+<tr>
+<td>主后端</td>
+<td>Transformers；另给 SGLang 高并发吞吐</td>
+</tr>
+<tr>
+<td>候选预算说明</td>
+<td>表中括号对 tree 方法表示 tree size，对 block 方法表示 block size</td>
+</tr>
+</tbody>
+</table></div>
+<p>跨方法结果必须同时看 acceptance 与 latency。EAGLE-3 的 tree size、DFlash/Domino 的 block size 虽都属于验证预算，但候选拓扑和 draft 成本并不相同。</p>
+<h3 id="8-2-transformers-主结果-domino-对-dflash">8.2 Transformers 主结果：Domino 对 DFlash</h3>
+<p>下表汇总论文 Table 1 的八个任务平均值：</p>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>采样设置</th>
+<th>Target</th>
+<th>方法</th>
+<th style="text-align:right">平均加速</th>
+<th style="text-align:right">平均接受长度</th>
+<th>Domino 相对 DFlash</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Temperature 0</td>
+<td>Qwen3-4B</td>
+<td>DFlash</td>
+<td style="text-align:right">4.70×</td>
+<td style="text-align:right">6.11</td>
+<td>基线</td>
+</tr>
+<tr>
+<td>Temperature 0</td>
+<td>Qwen3-4B</td>
+<td><strong>Domino</strong></td>
+<td style="text-align:right"><strong>5.47×</strong></td>
+<td style="text-align:right"><strong>7.08</strong></td>
+<td>加速 +16.4%，接受长度 +15.9%</td>
+</tr>
+<tr>
+<td>Temperature 0</td>
+<td>Qwen3-8B</td>
+<td>DFlash</td>
+<td style="text-align:right">4.66×</td>
+<td style="text-align:right">6.06</td>
+<td>基线</td>
+</tr>
+<tr>
+<td>Temperature 0</td>
+<td>Qwen3-8B</td>
+<td><strong>Domino</strong></td>
+<td style="text-align:right"><strong>5.49×</strong></td>
+<td style="text-align:right"><strong>7.17</strong></td>
+<td>加速 +17.8%，接受长度 +18.3%</td>
+</tr>
+<tr>
+<td>Temperature 1</td>
+<td>Qwen3-4B</td>
+<td>DFlash</td>
+<td style="text-align:right">4.03×</td>
+<td style="text-align:right">5.33</td>
+<td>基线</td>
+</tr>
+<tr>
+<td>Temperature 1</td>
+<td>Qwen3-4B</td>
+<td><strong>Domino</strong></td>
+<td style="text-align:right"><strong>4.61×</strong></td>
+<td style="text-align:right"><strong>6.00</strong></td>
+<td>加速 +14.4%，接受长度 +12.6%</td>
+</tr>
+<tr>
+<td>Temperature 1</td>
+<td>Qwen3-8B</td>
+<td>DFlash</td>
+<td style="text-align:right">3.96×</td>
+<td style="text-align:right">5.18</td>
+<td>基线</td>
+</tr>
+<tr>
+<td>Temperature 1</td>
+<td>Qwen3-8B</td>
+<td><strong>Domino</strong></td>
+<td style="text-align:right"><strong>4.46×</strong></td>
+<td style="text-align:right"><strong>5.91</strong></td>
+<td>加速 +12.6%，接受长度 +14.1%</td>
+</tr>
+</tbody>
+</table></div>
+<p>这个表的可靠结论是：在相同 target、数据、后端和 block 设置下，因果 correction 的接受长度增益足以覆盖其顺序开销。它不能证明换到任意 GPU、任意 batch 或任意 serving engine 后仍保持相同比例。</p>
+<h3 id="8-3-figure-1-与-figure-2-的-headline-结果">8.3 Figure 1 与 Figure 2 的 Headline 结果</h3>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>结果</th>
+<th style="text-align:right">数值</th>
+<th>口径</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Domino head 参数增量</td>
+<td style="text-align:right">56M，+5.3%</td>
+<td>相对对应 draft model</td>
+</tr>
+<tr>
+<td>总 draft-then-verify 延迟增量</td>
+<td style="text-align:right">+2.8%</td>
+<td>Figure 1 的 Qwen3-8B/A100/context 1024/budget 16</td>
+</tr>
+<tr>
+<td>平均接受长度增益</td>
+<td style="text-align:right">+16.6%</td>
+<td>Figure 1，同训练数据</td>
+</tr>
+<tr>
+<td>端到端加速增益</td>
+<td style="text-align:right">+12.3%</td>
+<td>Figure 1，同训练数据</td>
+</tr>
+<tr>
+<td>GSM8K 峰值示例</td>
+<td style="text-align:right">DFlash 5.21× → Domino 7.92×</td>
+<td>Figure 2，Qwen3-8B、Transformers</td>
+</tr>
+</tbody>
+</table></div>
+<p>7.92× 是单任务 headline，不是 Table 1 的八任务平均值。报告或复现时应同时保留任务、后端、温度、候选预算和最大生成长度，不能只引用最大数字。</p>
+<h3 id="8-4-同数据对比-排除训练数据优势">8.4 同数据对比：排除训练数据优势</h3>
+<p>论文第 5.3.1 节在同一数据设置下比较 Qwen3-8B、greedy、budget 16：</p>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>方法</th>
+<th style="text-align:right">GSM8K 接受长度</th>
+<th style="text-align:right">HumanEval 接受长度</th>
+<th style="text-align:right">LiveCodeBench 接受长度</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>EAGLE-3</td>
+<td style="text-align:right">5.01</td>
+<td style="text-align:right">4.84</td>
+<td style="text-align:right">4.38</td>
+</tr>
+<tr>
+<td>FR-Spec</td>
+<td style="text-align:right">4.79</td>
+<td style="text-align:right">4.54</td>
+<td style="text-align:right">4.21</td>
+</tr>
+<tr>
+<td>DFlash</td>
+<td style="text-align:right">3.90</td>
+<td style="text-align:right">3.78</td>
+<td style="text-align:right">3.66</td>
+</tr>
+<tr>
+<td><strong>Domino</strong></td>
+<td style="text-align:right"><strong>4.65</strong></td>
+<td style="text-align:right"><strong>4.35</strong></td>
+<td style="text-align:right"><strong>4.24</strong></td>
+</tr>
+</tbody>
+</table></div>
+<p>Domino 仍稳定高于 DFlash，说明增益不是由额外训练样本单独造成；同时 EAGLE-3 在部分任务仍有更长接受长度，说明 Domino 的优势来自接受长度与更低 draft latency 的组合，而不是在所有任务上单纯最大化 acceptance。</p>
+<h3 id="8-5-training-strategy-消融">8.5 Training Strategy 消融</h3>
+<p><img alt="Domino 论文 Figure 4 训练策略消融" src="assets/domino_paper_training_ablation_2605.29707v1.png"/></p>
+<p>图源：论文 arXiv v1 Figure 4。左图展示 base-anchored curriculum 对 parallel backbone loss 的保护，右图比较三种训练策略的平均接受长度。</p>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>训练策略</th>
+<th style="text-align:right">平均接受长度</th>
+<th>相对含义</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Training-time testing</td>
+<td style="text-align:right">3.80</td>
+<td>自生成错误前缀带来无效状态学习</td>
+</tr>
+<tr>
+<td>Teacher forcing</td>
+<td style="text-align:right">3.96</td>
+<td>对齐 accepted-prefix regime</td>
+</tr>
+<tr>
+<td><strong>Teacher forcing + Curriculum</strong></td>
+<td style="text-align:right"><strong>4.19</strong></td>
+<td>同时保护 base backbone，结果最好</td>
+</tr>
+</tbody>
+</table></div>
+<p>这一消融分别支持两个设计判断：teacher forcing 解决训练状态与验证状态错位，curriculum 解决 correction head 对 base backbone 的替代问题。</p>
+<h3 id="8-6-domino-head-消融">8.6 Domino Head 消融</h3>
+<p>论文 Table 4/6 在八个任务上移除或加入 Domino head：</p>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>指标</th>
+<th style="text-align:right">无 Domino Head</th>
+<th style="text-align:right">有 Domino Head</th>
+<th style="text-align:right">相对变化</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>平均接受长度</td>
+<td style="text-align:right">3.49</td>
+<td style="text-align:right">4.19</td>
+<td style="text-align:right">+20.1%</td>
+</tr>
+<tr>
+<td>平均加速</td>
+<td style="text-align:right">2.84×</td>
+<td style="text-align:right">3.31×</td>
+<td style="text-align:right">+16.5%</td>
+</tr>
+</tbody>
+</table></div>
+<p>各任务明细为：</p>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>任务</th>
+<th style="text-align:right">无 Head 接受长度 / 加速</th>
+<th style="text-align:right">有 Head 接受长度 / 加速</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>GSM8K</td>
+<td style="text-align:right">3.82 / 3.17×</td>
+<td style="text-align:right">4.80 / 3.84×</td>
+</tr>
+<tr>
+<td>MATH</td>
+<td style="text-align:right">3.76 / 3.08×</td>
+<td style="text-align:right">4.66 / 3.74×</td>
+</tr>
+<tr>
+<td>AIME</td>
+<td style="text-align:right">3.68 / 3.03×</td>
+<td style="text-align:right">4.29 / 3.47×</td>
+</tr>
+<tr>
+<td>HumanEval</td>
+<td style="text-align:right">3.69 / 3.04×</td>
+<td style="text-align:right">4.35 / 3.51×</td>
+</tr>
+<tr>
+<td>MBPP</td>
+<td style="text-align:right">3.30 / 2.70×</td>
+<td style="text-align:right">3.94 / 3.16×</td>
+</tr>
+<tr>
+<td>LiveCodeBench</td>
+<td style="text-align:right">3.36 / 2.64×</td>
+<td style="text-align:right">3.92 / 2.98×</td>
+</tr>
+<tr>
+<td>MT-Bench</td>
+<td style="text-align:right">2.84 / 2.21×</td>
+<td style="text-align:right">3.39 / 2.46×</td>
+</tr>
+<tr>
+<td>平均</td>
+<td style="text-align:right">3.49 / 2.84×</td>
+<td style="text-align:right">4.19 / 3.31×</td>
+</tr>
+</tbody>
+</table></div>
+<p>接受长度提升 20.1%，加速提升 16.5%，差额就是 correction 本身的时间成本和系统非线性开销。该结果比只报告 acceptance 更有说服力。</p>
+<h3 id="8-7-sglang-高并发吞吐">8.7 SGLang 高并发吞吐</h3>
+<p>论文 Table 2 给出不同 concurrency 下的总 TPS。下表保留 Qwen3-8B 的代表点：</p>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>任务</th>
+<th>方法</th>
+<th style="text-align:right">Concurrency 2</th>
+<th style="text-align:right">Concurrency 8</th>
+<th style="text-align:right">Concurrency 32</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>GSM8K</td>
+<td>Autoregressive</td>
+<td style="text-align:right">184</td>
+<td style="text-align:right">655</td>
+<td style="text-align:right">1713</td>
+</tr>
+<tr>
+<td>GSM8K</td>
+<td>DFlash</td>
+<td style="text-align:right">672（3.7×）</td>
+<td style="text-align:right">1915（2.9×）</td>
+<td style="text-align:right">2801（1.6×）</td>
+</tr>
+<tr>
+<td>GSM8K</td>
+<td><strong>Domino</strong></td>
+<td style="text-align:right"><strong>942（5.1×）</strong></td>
+<td style="text-align:right"><strong>2678（4.1×）</strong></td>
+<td style="text-align:right"><strong>3650（2.1×）</strong></td>
+</tr>
+<tr>
+<td>MBPP</td>
+<td>Autoregressive</td>
+<td style="text-align:right">183</td>
+<td style="text-align:right">635</td>
+<td style="text-align:right">1428</td>
+</tr>
+<tr>
+<td>MBPP</td>
+<td>DFlash</td>
+<td style="text-align:right">649（3.6×）</td>
+<td style="text-align:right">1889（3.0×）</td>
+<td style="text-align:right">2800（2.0×）</td>
+</tr>
+<tr>
+<td>MBPP</td>
+<td><strong>Domino</strong></td>
+<td style="text-align:right"><strong>701（3.8×）</strong></td>
+<td style="text-align:right"><strong>2035（3.2×）</strong></td>
+<td style="text-align:right"><strong>3027（2.1×）</strong></td>
+</tr>
+</tbody>
+</table></div>
+<p>并发升高后，target batching 本身更充分，所有 speculative 方法相对 AR 的倍数都会收缩；Domino 在这些点仍高于 DFlash，但增益在 GSM8K 比 MBPP 更明显，说明 workload 的 acceptance 分布仍是决定因素。</p>
+<h3 id="8-8-第-5-节实验能证明什么-不能证明什么">8.8 第 5 节实验能证明什么、不能证明什么</h3>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>可以支持的结论</th>
+<th>不能外推的结论</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Domino correction 在统一 DFlash backbone 上提高 acceptance</td>
+<td>任意 target family 都有相同收益</td>
+</tr>
+<tr>
+<td>收益在 greedy 与 temperature 1 下都存在</td>
+<td>任意 sampling 参数都同样有效</td>
+</tr>
+<tr>
+<td>同数据对比排除了主要数据量混淆</td>
+<td>训练数据质量完全不影响最终差异</td>
+</tr>
+<tr>
+<td>Head 消融证明额外模块净提升端到端加速</td>
+<td>56M head 在所有硬件上都只增加 2.8% 延迟</td>
+</tr>
+<tr>
+<td>SGLang 结果表明收益可进入 serving runtime</td>
+<td>已在 vLLM、TensorRT-LLM 等所有引擎系统验证</td>
+</tr>
+</tbody>
+</table></div>
+<h2 id="9-与其他-draft-方法的机制对比">9. 与其他 Draft 方法的机制对比</h2>
+<h3 id="9-1-dflash-domino-dspark-与-dflash-2">9.1 DFlash、Domino、DSpark 与 DFlash 2</h3>
+<div class="mermaid">flowchart TB
+    C["Target Context 与 Mask Block"]
+
+    subgraph F1["DFlash"]
+        A1["一次并行 Backbone"] --&gt; A2["整块独立 Base Logits"]
+        A2 --&gt; A3["候选 Path"]
+    end
+
+    subgraph F2["Domino"]
+        B1["一次并行 Backbone"] --&gt; B2["整块 Base Logits"]
+        B2 --&gt; B3["GRU 加全词表低秩修正"]
+        B3 --&gt; B4["前驱条件 Path"]
+    end
+
+    subgraph F3["DSpark"]
+        D1["一次并行 Backbone"] --&gt; D2["Markov 或 RNN 全词表修正"]
+        D2 --&gt; D3["Confidence 调度验证长度"]
+        D3 --&gt; D4["前驱条件 Path"]
+    end
+
+    subgraph F4["DFlash 2"]
+        E1["并行 Backbone 加动态短卷积"] --&gt; E2["每槽并行 Top K"]
+        E2 --&gt; E3["前驱条件候选重排"]
+        E3 --&gt; E4["前驱条件 Path"]
+    end
+
+    C --&gt; A1
+    C --&gt; B1
+    C --&gt; D1
+    C --&gt; E1
+    A3 --&gt; V["Target Verification"]
+    B4 --&gt; V
+    D4 --&gt; V
+    E4 --&gt; V
+
+    classDef context fill:#EAF3FF,stroke:#3274D9,color:#102A43,stroke-width:1.5px;
+    classDef base fill:#EAF8F0,stroke:#16A36A,color:#12372A,stroke-width:1.5px;
+    classDef causal fill:#FFF4E5,stroke:#E78B22,color:#4A2A00,stroke-width:1.5px;
+    classDef verify fill:#F3EEFF,stroke:#7857D8,color:#2E1A66,stroke-width:1.5px;
+    class C context;
+    class A1,A2,B1,B2,D1,E1,E2 base;
+    class A3,B3,B4,D2,D3,D4,E3,E4 causal;
+    class V verify;
+</div>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>维度</th>
+<th>DFlash</th>
+<th>Domino</th>
+<th>DSpark</th>
+<th>DFlash 2</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>主要 backbone</td>
+<td>Block-parallel</td>
+<td>Block-parallel</td>
+<td>Block-parallel</td>
+<td>Block-parallel</td>
+</tr>
+<tr>
+<td>Hidden 层块内专用因果模块</td>
+<td>无</td>
+<td>无，依赖最终 correction</td>
+<td>无，依赖最终 sequential head</td>
+<td>每层动态因果短卷积</td>
+</tr>
+<tr>
+<td>Token path 依赖</td>
+<td>各槽基础 logits 近似独立</td>
+<td>GRU 汇总完整已选前缀</td>
+<td>Markov、gated 或 RNN head</td>
+<td>前一 token 条件 selector</td>
+</tr>
+<tr>
+<td>顺序阶段词表范围</td>
+<td>无额外顺序修正</td>
+<td>低秩投影到完整词表</td>
+<td>低秩修正到完整词表</td>
+<td>只在每槽 Top-$K$ 内重排</td>
+</tr>
+<tr>
+<td>Verification budget</td>
+<td>固定 block</td>
+<td>固定 block</td>
+<td>Confidence 加 hardware-aware prefix scheduling</td>
+<td>固定 block</td>
+</tr>
+<tr>
+<td>原始候选拓扑</td>
+<td>Path</td>
+<td>Path</td>
+<td>Path</td>
+<td>Path</td>
+</tr>
+<tr>
+<td>重点解决问题</td>
+<td>降低 draft latency</td>
+<td>用低成本恢复块内 causal dependency</td>
+<td>同时改善 coherence 与验证预算利用率</td>
+<td>同时修复 hidden coherence 与候选排序</td>
+</tr>
+</tbody>
+</table></div>
+<p>Domino 与 DSpark 最接近：两者都在并行 backbone 后加入顺序、全词表 correction。Domino 的独特重点是 accepted-prefix teacher forcing 与 base-anchored curriculum；DSpark 还显式预测 confidence，并把硬件感知 verification prefix 调度纳入系统。</p>
+<p>DFlash 2 则把问题拆成两个模块：动态短卷积在 backbone 内改善 hidden coherence，selector 只在并行 Top-$K$ 内做顺序重排。它减少了 Domino 的 $O(Vr)$ 顺序词表投影，但也引入“真实 token 必须先进入 Top-$K$”的候选召回约束。</p>
+<h3 id="9-2-与-eagle-3-的根本区别">9.2 与 EAGLE-3 的根本区别</h3>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>维度</th>
+<th>EAGLE-3</th>
+<th>Domino</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Draft 生成</td>
+<td>轻量 drafter 自回归 rollout</td>
+<td>Backbone 整块并行，只有小 head 顺序</td>
+</tr>
+<tr>
+<td>因果条件</td>
+<td>每步重跑 draft network，条件最完整</td>
+<td>GRU state 加当前位置并行 hidden</td>
+</tr>
+<tr>
+<td>LM head</td>
+<td>随 rollout 多次参与</td>
+<td>Base head 整块一次，correction head 顺序</td>
+</tr>
+<tr>
+<td>候选拓扑</td>
+<td>通常构造 tree</td>
+<td>原始方法为单 path</td>
+</tr>
+<tr>
+<td>候选长度扩大时</td>
+<td>Draft latency 近似线性增加</td>
+<td>只增加 GRU/correction 顺序成本</td>
+</tr>
+<tr>
+<td>论文 Figure 1 现象</td>
+<td>接受长度更高，但 tree 与顺序成本限制加速</td>
+<td>目标是用更低成本换取接近的 causal gain</td>
+</tr>
+</tbody>
+</table></div>
+<p>Domino 并不声称 GRU state 等价于完整自回归 backbone；它只要求这个低维状态能恢复足够多的块内依赖，使接受长度增益超过 correction 成本。</p>
+<h3 id="9-3-与-dominotree-的边界">9.3 与 DominoTree 的边界</h3>
+<p>Domino 的 correction 是 path-dependent：同一深度若父 token 不同，GRU state 和最终 logits 都不同。DominoTree 后续利用这个性质，对多条真实 root-to-node path 分别维护状态并展开 conditional tree。</p>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>方法</th>
+<th style="text-align:right">状态数量</th>
+<th>候选结构</th>
+<th>早期错误后的备选分支</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Domino</td>
+<td style="text-align:right">每个请求一条当前 path state</td>
+<td>Chain</td>
+<td>无</td>
+</tr>
+<tr>
+<td>DominoTree</td>
+<td style="text-align:right">每个保留父路径各有 state</td>
+<td>Conditional tree</td>
+<td>有</td>
+</tr>
+</tbody>
+</table></div>
+<p>因此 DominoTree 是对候选搜索拓扑的扩展，不是 Domino 论文第 4、5 节已经包含的模块。</p>
+<h3 id="9-4-效果数字为什么不能跨论文直接排名">9.4 效果数字为什么不能跨论文直接排名</h3>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>变量</th>
+<th>对结果的影响</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Target family 与规模</td>
+<td>Target 单步延迟、词表大小、feature 难度不同</td>
+</tr>
+<tr>
+<td>Draft block 或 tree budget</td>
+<td>改变接受上限、draft 成本和 verification 成本</td>
+</tr>
+<tr>
+<td>Greedy 或 sampling</td>
+<td>Proposal 接受概率与 rejection sampling 成本不同</td>
+</tr>
+<tr>
+<td>Hardware</td>
+<td>小 GEMV、带宽、kernel launch 与 target compute 比例不同</td>
+</tr>
+<tr>
+<td>Backend</td>
+<td>Transformers、SGLang、vLLM 的 batching 和 graph capture 不同</td>
+</tr>
+<tr>
+<td>数据与 target regeneration</td>
+<td>直接决定 draft-target distribution alignment</td>
+</tr>
+<tr>
+<td>并发与请求长度</td>
+<td>改变 target batching 收益和 speculative 相对价值</td>
+</tr>
+</tbody>
+</table></div>
+<p>所以本报告只把 Domino 论文内部的 DFlash/EAGLE-3 matched results 作为直接数值证据；与 DSpark、DFlash 2 的比较限定为机制层，不用不同论文的最大 speedup 排名。</p>
+<h2 id="10-公开实现与复现状态">10. 公开实现与复现状态</h2>
+<h3 id="10-1-官方-domino-仓库">10.1 官方 Domino 仓库</h3>
+<p>核验 commit 中共有 9 个 Python 文件，覆盖：</p>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>能力</th>
+<th>状态</th>
+<th>入口</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Qwen3 Transformers 单序列推理</td>
+<td>已公开</td>
+<td><code>code/dflash.py::spec_generate</code></td>
+</tr>
+<tr>
+<td>Greedy Domino fused correction</td>
+<td>已公开</td>
+<td><code>code/kernel/domino.py</code></td>
+</tr>
+<tr>
+<td>Hugging Face benchmark</td>
+<td>已公开</td>
+<td><code>run_hf_benchmark.sh</code>、<code>code/benchmark.py</code></td>
+</tr>
+<tr>
+<td>SGLang benchmark</td>
+<td>已公开</td>
+<td><code>run_sglang_benchmark.sh</code>、<code>code/benchmark_sglang.py</code></td>
+</tr>
+<tr>
+<td>公开 checkpoint</td>
+<td>已公开</td>
+<td>Hugging Face Domino collection</td>
+</tr>
+<tr>
+<td>训练代码</td>
+<td>不在该仓库，已进入 SpecForge</td>
+<td>README 明确链接 SpecForge</td>
+</tr>
+</tbody>
+</table></div>
+<p>官方 Transformers <code>spec_generate</code> 当前明确限制 batch shape 为 <code>[1, seq_len]</code> 且 draft/target 在同一设备。README 说明 Transformers backend 当前支持 Qwen3 checkpoint，Qwen3.6-27B 使用 SGLang 路径。</p>
+<h3 id="10-2-specforge-训练实现">10.2 SpecForge 训练实现</h3>
+<p>核验的 SpecForge HEAD 已包含：</p>
+<ul>
+<li><code>specforge/algorithms/domino/</code> algorithm 与 provider；</li>
+<li><code>specforge/core/domino_loss.py</code> 与 Triton loss；</li>
+<li><code>specforge/modeling/draft/domino.py</code>；</li>
+<li>Domino model、loss、runtime launch tests；</li>
+<li>Qwen3 的 offline、online、external/managed-local disaggregated 配置。</li>
+</ul>
+<p>这意味着 Domino 已具备公开训练与推理代码，不是只有论文伪代码。但复现实验仍应钉住 paper/model/code revision，并核对数据 regeneration、target hidden layer、block size、runtime branch 和 kernel 参数。</p>
+<h2 id="11-技术优势-局限性与风险">11. 技术优势、局限性与风险</h2>
+<h3 id="11-1-技术优势">11.1 技术优势</h3>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>优势</th>
+<th>原因</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>改动集中</td>
+<td>不改 target verifier，只在并行 draft backbone 后加入 correction head</td>
+</tr>
+<tr>
+<td>职责清晰</td>
+<td>Backbone 负责语义，GRU 负责已选前驱，低秩 head 负责 residual</td>
+</tr>
+<tr>
+<td>训练目标与接受机制一致</td>
+<td>Teacher forcing 直接优化 accepted-prefix regime</td>
+</tr>
+<tr>
+<td>有端到端净收益证据</td>
+<td>Head 消融同时提高 acceptance 和真实 speedup</td>
+</tr>
+<tr>
+<td>系统实现完整</td>
+<td>作者不仅给结构，还给 fused Triton、CUDA Graph 与 serving benchmark</td>
+</tr>
+</tbody>
+</table></div>
+<h3 id="11-2-论文明确或可以直接推出的局限">11.2 论文明确或可以直接推出的局限</h3>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>局限</th>
+<th>影响</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>不降低训练成本</td>
+<td>仍需 target regeneration、target feature 和完整 draft 训练</td>
+</tr>
+<tr>
+<td>Full-vocabulary correction 仍顺序执行</td>
+<td>$W_2\in\mathbb{R}^{V\times r}$ 对大词表有显存带宽压力</td>
+</tr>
+<tr>
+<td>原始方法只有一条 path</td>
+<td>早期 mismatch 后面的候选全部失去验证价值</td>
+</tr>
+<tr>
+<td>高性能 kernel 假设较强</td>
+<td>Greedy fused runner 依赖固定 batch、固定 steps 和 CUDA Graph</td>
+</tr>
+<tr>
+<td>论文 target 范围有限</td>
+<td>arXiv v1 只系统评测 Qwen3-4B/8B</td>
+</tr>
+<tr>
+<td>Serving 覆盖有限</td>
+<td>论文主要集成 SGLang，其他框架未系统评价</td>
+</tr>
+<tr>
+<td>平台收益不固定</td>
+<td>不同 GPU 上 correction overhead 占比可能显著变化</td>
+</tr>
+</tbody>
+</table></div>
+<h3 id="11-3-复现时最容易犯的错误">11.3 复现时最容易犯的错误</h3>
+<ol>
+<li>把 56M 写成相对 8B target 的 +5.3%；正确口径是相对 draft model。</li>
+<li>只复现 acceptance，不记录 correction、draft、verification 和端到端 latency。</li>
+<li>用 drafter 自生成错误前缀训练，却仍称为论文 teacher forcing recipe。</li>
+<li>只优化 final loss，漏掉 base-anchored curriculum，导致 backbone loss 退化。</li>
+<li>把 full-vocabulary logits 当成 tree，或把后续 DominoTree 写入原始 Domino。</li>
+<li>把 Transformers 单序列结果外推为高并发 serving 吞吐。</li>
+<li>不固定 target-regenerated 数据、target revision 与 hidden-layer 选择，导致 checkpoint 不可比。</li>
+</ol>
+<h2 id="12-技术评价">12. 技术评价</h2>
+<p>Domino 的价值在于给“并行 drafting 是否必须牺牲因果依赖”提供了一个干净答案：不必。昂贵的上下文建模与低成本的块内因果修正可以分别执行，并在 logit space 汇合。</p>
+<p>它最有说服力的三点是：</p>
+<ol>
+<li><strong>结构上最小化顺序路径。</strong> 顺序循环不含 draft backbone，base LM head 也已整块完成；</li>
+<li><strong>训练状态与验证语义一致。</strong> Teacher forcing 不是常规选择的机械复用，而是基于“第一个错误截断 suffix”的 acceptance 逻辑；</li>
+<li><strong>算法与 kernel 联合设计。</strong> 论文没有把 56M head 当作免费模块，而是明确测量 2.64 ms，并通过 Triton/CUDA Graph 降到 1.20 ms。</li>
+</ol>
+<p>它也不是终点。全词表 residual 使顺序成本仍随 $\gamma$ 增长；单 path 无法抵抗早期分支错误；训练仍需要大规模 target-generated 数据。后续 DominoTree、Top-$K$ selector 或动态 verification budget 都可以看作对这三个问题的不同延伸。</p>
+<blockquote>
+<p><strong>最终结论：</strong> Domino 证明了“因果建模”与“自回归重跑 backbone”不是同一件事。其最佳适用前提是 parallel backbone 已经能给出较强 base logits，而轻量前驱状态足以修正块内 coherence；当这个条件成立时，接受长度提升可以明显超过 head overhead，并转化为真实端到端加速。</p>
+</blockquote>
+<h2 id="13-公开链接与参考资料">13. 公开链接与参考资料</h2>
+<ol>
+<li>Jianuo Huang et al., <a href="https://arxiv.org/abs/2605.29707">Domino: Decoupling Causal Modeling from Autoregressive Drafting in Speculative Decoding</a>, arXiv:2605.29707, 2026.</li>
+<li>Domino 论文 <a href="https://arxiv.org/html/2605.29707v1">HTML v1</a>、<a href="https://arxiv.org/pdf/2605.29707v1">PDF v1</a>、<a href="https://arxiv.org/html/2605.29707v1#S5">第 5 节</a>。</li>
+<li>Jianuo Huang, <a href="https://github.com/jianuo-huang/Domino">Domino 官方 GitHub</a>.</li>
+<li>Huang2020, <a href="https://huggingface.co/collections/Huang2020/domino">Domino Hugging Face 模型集合</a>.</li>
+<li>SGLang Project, <a href="https://github.com/sgl-project/SpecForge">SpecForge</a>，Domino 训练实现。</li>
+<li>Jian Chen, Yesheng Liang, Zhijian Liu, <a href="https://arxiv.org/abs/2602.06036">DFlash: Block Diffusion for Flash Speculative Decoding</a>, 2026.</li>
+<li>DeepSeek-AI, <a href="https://arxiv.org/abs/2607.05147">DSpark: Confidence-Scheduled Speculative Decoding with Semi-Autoregressive Generation</a>；<a href="https://github.com/deepseek-ai/DeepSpec">DeepSpec 官方代码</a>.</li>
+<li>Yuhui Li et al., <a href="https://arxiv.org/abs/2503.01840">EAGLE-3: Scaling up Inference Acceleration of Large Language Models via Training-Time Test</a>, 2025.</li>
+<li>Inco AI, <a href="https://inco.ai/blog/dflash2/">DFlash 2: Keep Drafting Parallel</a>, 2026.</li>
+</ol>
+
+    </article>
+  </main>
+  <script>
+    window.addEventListener('DOMContentLoaded', () => {
+      if (window.mermaid) {
+        mermaid.initialize({ startOnLoad: true, theme: 'neutral', securityLevel: 'strict' });
+      }
+    });
+    const fill = document.getElementById('progressFill');
+    window.addEventListener('scroll', () => {
+      const h = document.documentElement.scrollHeight - window.innerHeight;
+      fill.style.width = h > 0 ? `${window.scrollY / h * 100}%` : '0%';
+    }, { passive: true });
+    const links = document.querySelectorAll('#tocList a');
+    const sections = [];
+    links.forEach(a => {
+      const el = document.getElementById(a.getAttribute('href').slice(1));
+      if (el) sections.push({ el, a });
+    });
+    const observer = new IntersectionObserver((entries) => {
+      entries.forEach(entry => {
+        if (entry.isIntersecting) {
+          links.forEach(a => a.classList.remove('active'));
+          const hit = sections.find(s => s.el === entry.target);
+          if (hit) hit.a.classList.add('active');
+        }
+      });
+    }, { threshold: 0.08, rootMargin: '-72px 0px -64% 0px' });
+    sections.forEach(s => observer.observe(s.el));
+  </script>
+</body>
+</html>
