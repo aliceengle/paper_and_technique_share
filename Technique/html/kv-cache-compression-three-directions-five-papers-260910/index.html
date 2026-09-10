@@ -1,0 +1,1638 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>KV Cache 压缩的三个方向：OSCAR、KVarN、VecInfer、NOVA-KV 与 RestoreKV</title>
+  <meta name="description" content="KV Cache 三方向五论文分析：OSCAR、KVarN、VecInfer、NOVA-KV 与 RestoreKV 的机制、效果和遗留问题">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Noto+Sans+SC:wght@300;400;500;600;700&family=Source+Serif+4:opsz,wght@8..60,500;8..60,600;8..60,700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.21/dist/katex.min.css">
+  <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.21/dist/katex.min.js"></script>
+  <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.21/dist/contrib/auto-render.min.js"
+    onload="renderMathInElement(document.body, {delimiters:[{left:'$$',right:'$$',display:true},{left:'$',right:'$',display:false}], throwOnError:false});"></script>
+  <script defer src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
+  <style>
+    :root {
+      --bg: #f5f7fa;
+      --panel: #ffffff;
+      --panel-soft: #f8fafc;
+      --ink: #14202b;
+      --ink-2: #435260;
+      --ink-3: #7d8996;
+      --border: #dbe4ec;
+      --accent: #176f73;
+      --accent-2: #476fa8;
+      --accent-bg: rgba(23, 111, 115, .08);
+      --measure: 1180px;
+      --font-serif: "Source Serif 4", "Noto Sans SC", Georgia, serif;
+      --font-sans: "Noto Sans SC", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      --font-mono: "IBM Plex Mono", "Noto Sans SC", monospace;
+    }
+    *, *::before, *::after { box-sizing: border-box; }
+    html { scroll-behavior: smooth; font-size: 17px; }
+    body {
+      margin: 0;
+      color: var(--ink-2);
+      background: linear-gradient(180deg, #fbfdff 0, var(--bg) 520px), var(--bg);
+      font-family: var(--font-sans);
+      line-height: 1.76;
+      -webkit-font-smoothing: antialiased;
+    }
+    a { color: var(--accent); text-decoration-color: rgba(23,111,115,.28); text-underline-offset: 3px; }
+    a:hover { text-decoration-color: var(--accent); }
+    .progress-bar { position: fixed; inset: 0 0 auto 0; height: 3px; z-index: 100; }
+    .progress-bar .fill { height: 100%; width: 0; background: linear-gradient(90deg, var(--accent), var(--accent-2)); }
+    .page { max-width: var(--measure); margin: 0 auto; padding: 50px 28px 76px; }
+    .hero { padding: 24px 0 30px; border-bottom: 1px solid var(--border); margin-bottom: 24px; }
+    .eyebrow {
+      color: var(--accent);
+      font: 600 .78rem/1.4 var(--font-mono);
+      letter-spacing: .03em;
+      text-transform: uppercase;
+      margin-bottom: .6rem;
+    }
+    h1, h2, h3, h4 { color: var(--ink); font-family: var(--font-serif); line-height: 1.34; }
+    h1 { max-width: 940px; margin: 0 0 .9rem; font-size: clamp(2rem, 4vw, 3.35rem); font-weight: 700; }
+    .lead { max-width: 850px; margin: 0; color: var(--ink-2); font-size: 1.04rem; }
+    .topline { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 18px; }
+    .pill {
+      display: inline-flex;
+      align-items: center;
+      min-height: 30px;
+      padding: 4px 10px;
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      background: var(--panel);
+      color: var(--ink-2);
+      font-size: .86rem;
+    }
+    .article-body {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 28px;
+      box-shadow: 0 16px 40px rgba(20, 32, 43, .06);
+    }
+    h2 { margin: 2.7rem 0 1rem; padding-bottom: .6rem; border-bottom: 1px solid var(--border); font-size: 1.46rem; }
+    .article-body > h2:first-child { margin-top: 0; }
+    .article-body img {
+      display: block;
+      width: auto;
+      max-width: min(100%, 960px);
+      height: auto;
+      margin: 18px auto 10px;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: #fff;
+    }
+    h3 { margin: 1.8rem 0 .65rem; font-size: 1.08rem; }
+    h4 { margin: 1.25rem 0 .45rem; font-size: 1rem; }
+    p { margin: 0 0 1rem; }
+    blockquote {
+      margin: 1rem 0 1.2rem;
+      padding: .85rem 1rem;
+      border-left: 4px solid var(--accent);
+      background: var(--accent-bg);
+      border-radius: 0 8px 8px 0;
+    }
+    code {
+      font-family: var(--font-mono);
+      font-size: .86em;
+      background: #edf4f7;
+      color: #20303c;
+      border: 1px solid rgba(190,205,218,.62);
+      border-radius: 4px;
+      padding: 1px 5px;
+    }
+    pre {
+      overflow-x: auto;
+      padding: 1rem;
+      background: #101820;
+      color: #e8eef3;
+      border-radius: 8px;
+      line-height: 1.58;
+    }
+    pre code { background: transparent; border: 0; color: inherit; padding: 0; }
+    ul, ol { padding-left: 1.35rem; margin: .35rem 0 1.15rem; }
+    li { margin: .2rem 0; }
+    .table-wrap {
+      overflow-x: auto;
+      margin: 1rem 0 1.35rem;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: #fff;
+    }
+    table { width: 100%; min-width: 760px; border-collapse: collapse; font-size: .91rem; }
+    th, td { padding: .64rem .72rem; border-bottom: 1px solid var(--border); vertical-align: top; }
+    th { background: var(--panel-soft); color: var(--ink); font-weight: 600; text-align: left; }
+    tr:nth-child(even) td { background: #fbfcfd; }
+    tr:last-child td { border-bottom: 0; }
+    .mermaid {
+      margin: 1rem 0 1.35rem;
+      padding: 1rem;
+      background: var(--panel-soft);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      overflow-x: auto;
+      text-align: center;
+    }
+    .mermaid svg {
+      display: block;
+      max-width: 100%;
+      height: auto;
+      margin: 0 auto;
+    }
+    .toc {
+      position: sticky;
+      top: 18px;
+      float: right;
+      width: 250px;
+      max-height: calc(100vh - 36px);
+      overflow: auto;
+      margin: 0 -282px 20px 24px;
+      padding: 14px;
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      background: rgba(255, 255, 255, .9);
+      backdrop-filter: blur(10px);
+      font-size: .78rem;
+    }
+    .toc-label { color: var(--ink-3); font: 600 .72rem/1 var(--font-mono); margin-bottom: .6rem; }
+    .toc ul { list-style: none; margin: 0; padding: 0; }
+    .toc a { display: block; padding: .22rem 0; color: var(--ink-3); text-decoration: none; }
+    .toc li.level-3 a { padding-left: .8rem; font-size: .74rem; }
+    .toc a.active { color: var(--accent); }
+    @media (max-width: 1720px) { .toc { display: none; } }
+    @media (max-width: 720px) {
+      html { font-size: 16px; }
+      .page { padding: 32px 14px 56px; }
+      .article-body { padding: 18px; border-radius: 10px; }
+      table { min-width: 640px; }
+    }
+    @media print {
+      .progress-bar, .toc { display: none !important; }
+      body { background: #fff; }
+      .page { max-width: none; padding: 0; }
+      .article-body { box-shadow: none; border: 0; padding: 0; }
+    }
+  </style>
+</head>
+<body>
+  <div class="progress-bar"><div class="fill" id="progressFill"></div></div>
+  <main class="page">
+    <header class="hero">
+      <div class="eyebrow">KV Cache Compression / Five Papers</div>
+      <h1>KV Cache 压缩的三个方向：OSCAR、KVarN、VecInfer、NOVA-KV 与 RestoreKV</h1>
+      <p class="lead">KV Cache 三方向五论文分析：OSCAR、KVarN、VecInfer、NOVA-KV 与 RestoreKV 的机制、效果和遗留问题</p>
+      <div class="topline">
+        <span class="pill">KV Cache</span>
+        <span class="pill">标量量化</span>
+        <span class="pill">向量量化</span>
+        <span class="pill">Token 恢复</span>
+      </div>
+    </header>
+    <nav class="toc" aria-label="文章目录">
+      <div class="toc-label">目录</div>
+      <ul id="tocList">
+        <li class="level-2"><a href="#0-名称-范围与阅读结论">0. 名称、范围与阅读结论</a></li>
+<li class="level-2"><a href="#1-三个主题之间的关系">1. 三个主题之间的关系</a></li>
+<li class="level-2"><a href="#2-主题一-低比特标量量化与误差控制">2. 主题一：低比特标量量化与误差控制</a></li>
+<li class="level-3"><a href="#2-1-oscar-离线谱协方差感知旋转">2.1 OSCAR：离线谱协方差感知旋转</a></li>
+<li class="level-3"><a href="#2-2-kvarn-面向真实长生成的方差归一化">2.2 KVarN：面向真实长生成的方差归一化</a></li>
+<li class="level-3"><a href="#2-3-oscar-与-kvarn-互补而非简单替代">2.3 OSCAR 与 KVarN：互补而非简单替代</a></li>
+<li class="level-2"><a href="#3-主题二-向量量化与变换编码">3. 主题二：向量量化与变换编码</a></li>
+<li class="level-3"><a href="#3-1-vecinfer-先抑制-k-outlier-再让码本覆盖数据空间">3.1 VecInfer：先抑制 K outlier，再让码本覆盖数据空间</a></li>
+<li class="level-3"><a href="#3-2-nova-kv-让-bit-花在-query-真正关注的方向">3.2 NOVA-KV：让 bit 花在 query 真正关注的方向</a></li>
+<li class="level-3"><a href="#3-3-vecinfer-与-nova-kv-不是简单的前后代关系">3.3 VecInfer 与 NOVA-KV：不是简单的前后代关系</a></li>
+<li class="level-2"><a href="#4-主题三-query-agnostic-淘汰后的学习式信息恢复">4. 主题三：Query-Agnostic 淘汰后的学习式信息恢复</a></li>
+<li class="level-3"><a href="#4-1-restorekv-从-选谁留下-转向-补回丢失信息">4.1 RestoreKV：从“选谁留下”转向“补回丢失信息”</a></li>
+<li class="level-3"><a href="#4-2-restorekv-与前两个主题的关系">4.2 RestoreKV 与前两个主题的关系</a></li>
+<li class="level-2"><a href="#5-五篇论文横向总表">5. 五篇论文横向总表</a></li>
+<li class="level-2"><a href="#6-五篇论文共同推动了什么">6. 五篇论文共同推动了什么</a></li>
+<li class="level-3"><a href="#6-1-从统一-mse-转向-误差在哪里真正重要">6.1 从统一 MSE 转向“误差在哪里真正重要”</a></li>
+<li class="level-3"><a href="#6-2-从单次量化转向完整生命周期">6.2 从单次量化转向完整生命周期</a></li>
+<li class="level-2"><a href="#7-尚未被五篇论文共同解决的问题">7. 尚未被五篇论文共同解决的问题</a></li>
+<li class="level-3"><a href="#7-1-缺少统一-可公平横比的实验合同">7.1 缺少统一、可公平横比的实验合同</a></li>
+<li class="level-3"><a href="#7-2-低于2-bit的可靠边界仍不清楚">7.2 低于2 bit的可靠边界仍不清楚</a></li>
+<li class="level-3"><a href="#7-3-组合压缩尚未闭环">7.3 组合压缩尚未闭环</a></li>
+<li class="level-3"><a href="#7-4-prefill峰值与prefix复用没有完全解决">7.4 Prefill峰值与prefix复用没有完全解决</a></li>
+<li class="level-3"><a href="#7-5-架构迁移仍是开放问题">7.5 架构迁移仍是开放问题</a></li>
+<li class="level-2"><a href="#8-建议的统一复现矩阵">8. 建议的统一复现矩阵</a></li>
+<li class="level-3"><a href="#8-1-质量与误差">8.1 质量与误差</a></li>
+<li class="level-3"><a href="#8-2-物理内存与速度">8.2 物理内存与速度</a></li>
+<li class="level-3"><a href="#8-3-最小公平配置">8.3 最小公平配置</a></li>
+<li class="level-2"><a href="#9-工程选型建议">9. 工程选型建议</a></li>
+<li class="level-2"><a href="#10-证据边界与最终判断">10. 证据边界与最终判断</a></li>
+<li class="level-2"><a href="#11-一手来源">11. 一手来源</a></li>
+      </ul>
+    </nav>
+    <article class="article-body">
+
+<blockquote>
+<p>调研日期：2026-09-10</p>
+<p>论文范围：OSCAR、KVarN、VecInfer、NOVA-KV、RestoreKV</p>
+<p>核心问题：五篇论文分别观察到了什么、核心创新是什么、解决了什么、取得了什么效果，又留下了哪些尚未解决的问题？</p>
+</blockquote>
+<h2 id="0-名称-范围与阅读结论">0. 名称、范围与阅读结论</h2>
+<p>本文将用户所称的 <code>verinfer</code> 解释为 <strong>VecInfer</strong>：</p>
+<ul>
+<li><a href="https://arxiv.org/abs/2510.06175">VecInfer: Efficient LLM Inference with Low-Bit KV Cache via Outlier-Suppressed Vector Quantization</a></li>
+<li>官方代码：<a href="https://github.com/ydyhello/VecInfer">ydyhello/VecInfer</a></li>
+</ul>
+<p>需要特别区分两个名字：</p>
+<ul>
+<li><strong>OSCAR</strong>：本文讨论的 arXiv:2605.17757，2-bit KV Cache 量化方法；</li>
+<li><strong>OScaR</strong>：arXiv:2605.19660，是另一篇不同论文，不在本文范围内。</li>
+</ul>
+<p>五篇论文并不是同一方向上的五个替代品，而是三个技术主题：</p>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>主题</th>
+<th>核心问题</th>
+<th>论文</th>
+<th>压缩后是否保留所有历史 token</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>主题一：低比特标量量化与误差控制</td>
+<td>如何让每个 KV 标量在约 2 bit 下仍可用</td>
+<td>OSCAR、KVarN</td>
+<td>是</td>
+</tr>
+<tr>
+<td>主题二：向量量化与变换编码</td>
+<td>如何用码本联合编码多个坐标，提高极低码率的表达能力</td>
+<td>VecInfer、NOVA-KV</td>
+<td>是</td>
+</tr>
+<tr>
+<td>主题三：淘汰后的信息恢复</td>
+<td>删除大部分 token 后，如何补回仅靠“选谁留下”无法保存的信息</td>
+<td>RestoreKV</td>
+<td>否；保留少量原始 KV，并生成恢复 KV</td>
+</tr>
+</tbody>
+</table></div>
+<p>结论先行：</p>
+<ol>
+<li><strong>OSCAR</strong> 把 attention-aware covariance、离线谱旋转、INT2 和压缩态 kernel 连成完整链路，解决的是“量化前怎样旋转，才能把有限精度放到重要方向”。</li>
+<li><strong>KVarN</strong> 发现静态 prefill 误差不能代表真实长生成，关键失败源是少数 token 的 norm/scale 被错误量化；它用双轴方差归一化抑制自回归误差累积。</li>
+<li><strong>VecInfer</strong> 发现 K outlier 会让低码率 VQ 码本利用率恶化；它用 Smooth + Hadamard 摊平分布，并实现融合 VQ attention kernel。</li>
+<li><strong>NOVA-KV</strong> 不再把 outlier 或原始 MSE 当最终目标，而是从 attention-product distortion 推导非正交 K transform，再以等体积分组实现固定宽 VQ。</li>
+<li><strong>RestoreKV</strong> 不再只优化“哪些原始 token 应保留”，而是让少量 learned restore tokens 在淘汰前读取完整上下文，生成上下文相关的补偿 KV。</li>
+<li>三个主题可以组合，但论文并未证明简单叠加后仍保持各自收益。特别是“淘汰率 × 量化 bit”看似能乘法压缩，实际会引入恢复状态量化、码本访问和双重误差传播。</li>
+</ol>
+<h2 id="1-三个主题之间的关系">1. 三个主题之间的关系</h2>
+<div class="mermaid">flowchart TB
+    FULL["完整 BF16 KV Cache"]
+
+    subgraph T1["主题一：标量量化与误差控制"]
+        O["OSCAR：离线 attention-aware 谱旋转"]
+        K["KVarN：在线双轴方差归一化"]
+    end
+
+    subgraph T2["主题二：向量量化与码本"]
+        V["VecInfer：outlier suppression 加 VQ"]
+        N["NOVA-KV：attention distortion 加非正交变换加 VQ"]
+    end
+
+    subgraph T3["主题三：淘汰与恢复"]
+        R["RestoreKV：保留原始 KV 加生成恢复 KV"]
+    end
+
+    FULL --&gt;|"全部 token，约 2 bit 每元素"| O
+    FULL --&gt;|"全部 token，约 2.3 bit 每元素"| K
+    FULL --&gt;|"全部 token，子向量索引"| V
+    FULL --&gt;|"全部 token，K 为 VQ"| N
+    FULL --&gt;|"仅保留预算内 token"| R
+
+    O -.-&gt;|V 侧 covariance 与 SQ 路径| N
+    V -.-&gt;|共享子向量码本路线| N
+</div>
+<p>这三个主题分别改变 KV Cache 的不同轴：</p>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>压缩轴</th>
+<th>典型控制量</th>
+<th>代表论文</th>
+<th>核心风险</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>每元素精度</td>
+<td>bit/element、group size、scale</td>
+<td>OSCAR、KVarN</td>
+<td>量化误差传播、scale/outlier、kernel 解包</td>
+</tr>
+<tr>
+<td>多坐标联合表示</td>
+<td>subvector dimension、codebook size、index width</td>
+<td>VecInfer、NOVA-KV</td>
+<td>码本训练、lookup、shared memory、写入时最近邻搜索</td>
+</tr>
+<tr>
+<td>token 数量</td>
+<td>retention ratio、restore-token 数</td>
+<td>RestoreKV</td>
+<td>不可逆信息丢失、未来 query 不可知、恢复状态容量有限</td>
+</tr>
+</tbody>
+</table></div>
+<p>因此，统一物理内存不能只看 payload bit 或 token retention ratio。更完整的口径应为：</p>
+<p>$$
+B_{\mathrm{physical}}
+=B_K+B_V+B_{\mathrm{scale}}+B_{\mathrm{zero}}
++B_{\mathrm{index}}+B_{\mathrm{codebook}}
++B_{\mathrm{restore}}+B_{\mathrm{band}}+B_{\mathrm{padding}}.
+$$</p>
+<p>其中：</p>
+<ul>
+<li>$B_{\mathrm{codebook}}$：VQ 码本、变换矩阵及均值等模型级状态；</li>
+<li>$B_{\mathrm{restore}}$：RestoreKV 合成的恢复 KV；</li>
+<li>$B_{\mathrm{band}}$：sink/recent 等高精度保护带；</li>
+<li>$B_{\mathrm{padding}}$：block/page 对齐与实现填充。</li>
+</ul>
+<h2 id="2-主题一-低比特标量量化与误差控制">2. 主题一：低比特标量量化与误差控制</h2>
+<p>主题一的共同点是：<strong>所有历史 token 仍然存在，只降低每个 K/V 元素的存储精度。</strong> OSCAR 主要处理“重要方向”，KVarN 主要处理“长生成中的 token-scale 累积”。</p>
+<h3 id="2-1-oscar-离线谱协方差感知旋转">2.1 OSCAR：离线谱协方差感知旋转</h3>
+<p>论文与代码：</p>
+<ul>
+<li>论文：<a href="https://arxiv.org/abs/2605.17757">OSCAR: Offline Spectral Covariance-Aware Rotation for 2-bit KV Cache Quantization</a></li>
+<li>代码：<a href="https://github.com/FutureMLS-Lab/OSCAR">FutureMLS-Lab/OSCAR</a></li>
+</ul>
+<h4>2.1.1 主要观察</h4>
+<p>OSCAR 的起点不是“所有 K/V 坐标同等重要”。KV 重构误差最终通过 attention 使用：</p>
+<p>$$
+S=\operatorname{softmax}\left(\frac{QK^\top}{\sqrt d}\right),
+\qquad O=SVW_O.
+$$</p>
+<p>因此：</p>
+<ul>
+<li>K 误差的关键影响是 $QK^\top$ 和 softmax 分布；</li>
+<li>V 误差的关键影响是 $S\Delta V$，而不是 raw $\lVert \Delta V\rVert^2$；</li>
+<li>直接最小化 K/V 欧氏 MSE，可能把精度浪费在下游不敏感的方向。</li>
+</ul>
+<p>论文还观察到 INT2 下单纯 Hadamard/随机旋转仍可能留下 attention-score divergence、attention-output error 和跨层传播误差。</p>
+<h4>2.1.2 核心创新</h4>
+<p>OSCAR 的核心是为每层分别构造 attention-aware K/V rotation：</p>
+<ul>
+<li>K 侧使用 query covariance 的谱方向，保护 $QK^\top$ 敏感子空间；</li>
+<li>V 侧使用 attention-weighted second moment：</li>
+</ul>
+<p>$$
+C_S=V^\top S^\top S V=(SV)^\top(SV),
+$$</p>
+<p>把量化精度优先放在真正影响 attention output 的方向；</p>
+<ul>
+<li>使用 Hadamard 与 bit-reversal permutation，把重要谱方向分散到量化 group；</li>
+<li>离线学习每层 rotation 和 clipping threshold；</li>
+<li>在线将逆变换折叠到 Q 路径或 $W_O$，并实现 INT2 paged-attention kernel；</li>
+<li>使用 64 个 sink token 和 256 个 recent token 的 BF16 保护带。</li>
+</ul>
+<p>OSCAR 的 <code>Offline Spectral Covariance-Aware Rotation</code> 可以拆为：</p>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>词</th>
+<th>含义</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Offline</td>
+<td>旋转和 clipping 在部署前由校准集计算，不在每个请求上训练</td>
+</tr>
+<tr>
+<td>Spectral</td>
+<td>对 covariance/second-moment 矩阵做特征值分解，利用其谱方向</td>
+</tr>
+<tr>
+<td>Covariance-Aware</td>
+<td>旋转由 Q、attention-weighted V 的统计量决定，而非纯随机</td>
+</tr>
+<tr>
+<td>Rotation</td>
+<td>使用可折叠的线性基变换改善 INT2 坐标分布和重要方向保护</td>
+</tr>
+</tbody>
+</table></div>
+<h4>2.1.3 取得的效果</h4>
+<p>OSCAR 原论文报告：</p>
+<ul>
+<li>在 Qwen3、GLM-4.7 等模型上，以约 <strong>2.28 effective BPE</strong> 接近 BF16；</li>
+<li>KV Cache 名义压缩约 $16/2.28\approx7.0\times$；</li>
+<li>覆盖 reasoning、coding 和最长 128K 的 RULER-NIAH；</li>
+<li>在特定长上下文、高 batch 配置下报告最高约 7 倍 throughput 提升；</li>
+<li>从 4B 扩展到超大模型配置，说明离线旋转具有一定模型规模可扩展性。</li>
+</ul>
+<p>但 NOVA-KV 在统一 chunked-prefill harness 中重新比较时，暴露出 OSCAR 的模型依赖性：</p>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>模型与任务</th>
+<th style="text-align:right">BF16</th>
+<th style="text-align:right">OSCAR</th>
+<th style="text-align:right">NOVA-KV</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Qwen3-8B，RULER 128K</td>
+<td style="text-align:right">83.4</td>
+<td style="text-align:right">25.3</td>
+<td style="text-align:right">75.4</td>
+</tr>
+<tr>
+<td>GPT-OSS-20B，RULER 8K</td>
+<td style="text-align:right">95.8</td>
+<td style="text-align:right">0.5</td>
+<td style="text-align:right">89.6</td>
+</tr>
+<tr>
+<td>GPT-OSS-20B，五任务均值</td>
+<td style="text-align:right">76.5</td>
+<td style="text-align:right">13.9</td>
+<td style="text-align:right">72.4</td>
+</tr>
+</tbody>
+</table></div>
+<p>这不是对 OSCAR 原论文结果的简单否定，而说明 chunked prefill、模型架构和每层信息密度会改变极低 bit 的稳定边界。</p>
+<h4>2.1.4 解决的问题</h4>
+<ul>
+<li>将 INT2 从通用 outlier flattening 推进到 attention-sensitive direction protection；</li>
+<li>给出 K/V 不同统计目标，而不是把二者当相同张量处理；</li>
+<li>将离线算法、paged cache、压缩态读取和吞吐验证连成端到端链路；</li>
+<li>证明 raw K/V MSE 不是判断 attention 质量的充分指标。</li>
+</ul>
+<h4>2.1.5 尚未解决的问题</h4>
+<ul>
+<li>仍是固定宽 SQ；在 GPT-OSS 这类高信息密度层中，2-bit 每坐标分辨率可能不足；</li>
+<li>主要使用正交 rotation，不能像非正交 transform coding 那样主动压缩能量；</li>
+<li>依赖校准集、per-layer rotation、clipping 和 BF16 sink/recent band；</li>
+<li>原论文与后续 chunked-prefill 复现存在明显结果差异，需要统一 prefill 语义；</li>
+<li>Figure 2 的 caption 写 relative MSE，但主图和补充公式实际是 absolute per-element MSE，误差口径存在文档不一致；</li>
+<li>V raw absolute MSE 仍随层增大，OSCAR降低其影响但没有消除层间尺度异质性；</li>
+<li>没有给出对所有新架构都稳定的 2-bit 精度保证。</li>
+</ul>
+<h3 id="2-2-kvarn-面向真实长生成的方差归一化">2.2 KVarN：面向真实长生成的方差归一化</h3>
+<p>论文与代码：</p>
+<ul>
+<li>论文：<a href="https://arxiv.org/abs/2606.03458">KVarN: Variance-Normalized KV-Cache Quantization Mitigates Error Accumulation in Reasoning Tasks</a></li>
+<li>代码：<a href="https://github.com/huawei-csl/KVarN">huawei-csl/KVarN</a></li>
+</ul>
+<h4>2.2.1 主要观察</h4>
+<p>KVarN 指出，许多 KV 量化实验更像静态 prefill：先产生完整 BF16 KV，再单次量化和测误差。但真实自回归 decode 是：</p>
+<pre><code class="language-text">旧 KV 被量化
+    ↓
+当前 token 读取量化 KV 并生成 hidden state
+    ↓
+由偏移后的 hidden state 生成新 K/V
+    ↓
+新 K/V 再写回量化 cache
+</code></pre>
+<p>所以误差会沿时间步反馈。作者进一步把 K 误差分为 magnitude 与 direction，观察到：</p>
+<ul>
+<li>最大量化错误主要来自 token norm/scale 错误，而不只是方向错误；</li>
+<li>修复最坏 5% outlier error，对端到端 KL 的帮助大于修复其余 95%；</li>
+<li>Hadamard 只能缓解 channel outlier，不能充分修正 token 轴的尺度失真。</li>
+</ul>
+<h4>2.2.2 核心创新</h4>
+<p>KVarN 采用：</p>
+<ol>
+<li>channel 维 Hadamard rotation；</li>
+<li>对每个 KV block 在 token 与 channel 两个轴上，进行交替的 log-domain variance normalization；</li>
+<li>最后执行普通 round-to-nearest quantization；</li>
+<li>除常规 scale/zero-point 外，再存一个高精度 scale，解码时多一次逐元素缩放。</li>
+</ol>
+<p>其目标是让归一化后的 K/V 在两个轴上都有更均匀的方差，避免某些 token 被 rounding 错误地放大或缩小。</p>
+<h4>2.2.3 取得的效果</h4>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>模型与任务</th>
+<th style="text-align:right">FP16</th>
+<th style="text-align:right">KIVI</th>
+<th style="text-align:right">QuaRot</th>
+<th style="text-align:right">KVarN</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Qwen3-4B AIME24</td>
+<td style="text-align:right">61.1</td>
+<td style="text-align:right">55.5</td>
+<td style="text-align:right">56.7</td>
+<td style="text-align:right">60.0</td>
+</tr>
+<tr>
+<td>Phi-4-14B MATH500</td>
+<td style="text-align:right">84.9</td>
+<td style="text-align:right">74.4</td>
+<td style="text-align:right">77.0</td>
+<td style="text-align:right">84.8</td>
+</tr>
+<tr>
+<td>Qwen3-4B HumanEval</td>
+<td style="text-align:right">88.8</td>
+<td style="text-align:right">86.4</td>
+<td style="text-align:right">86.3</td>
+<td style="text-align:right">88.4</td>
+</tr>
+<tr>
+<td>Phi-4-14B HumanEval</td>
+<td style="text-align:right">88.9</td>
+<td style="text-align:right">74.6</td>
+<td style="text-align:right">87.0</td>
+<td style="text-align:right">88.2</td>
+</tr>
+</tbody>
+</table></div>
+<p>这些量化方法的 K/V payload 均为 2/2 bit；KVarN 计入第二 scale 后约 <strong>2.3 effective BPE</strong>。</p>
+<p>长线检索 600 lines 时：</p>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>模型</th>
+<th style="text-align:right">FP16</th>
+<th style="text-align:right">KIVI</th>
+<th style="text-align:right">KVarN</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Qwen3-4B</td>
+<td style="text-align:right">90</td>
+<td style="text-align:right">74</td>
+<td style="text-align:right">85</td>
+</tr>
+<tr>
+<td>Llama-3.1-8B</td>
+<td style="text-align:right">92</td>
+<td style="text-align:right">83</td>
+<td style="text-align:right">89</td>
+</tr>
+<tr>
+<td>Phi-4-14B</td>
+<td style="text-align:right">95</td>
+<td style="text-align:right">82</td>
+<td style="text-align:right">95</td>
+</tr>
+</tbody>
+</table></div>
+<p>运行开销方面，Qwen3-4B 每生成 128 token 约 1050 ms，8 轮 VarN 约 1.9 ms，即相对 KIVI 量化流程增加约 0.18%；双 scale dequantization 约再增加 1%。</p>
+<h4>2.2.4 解决的问题</h4>
+<ul>
+<li>把 KV 量化评测从一次性静态误差推进到 autoregressive accumulation；</li>
+<li>找到少数 token-scale error 对长推理退化的主导作用；</li>
+<li>calibration-free，不需要离线任务数据和特征分解；</li>
+<li>使用均匀精度，不依赖稀疏 mixed-precision outlier table；</li>
+<li>给出 vLLM 后端，在线归一化开销较小。</li>
+</ul>
+<h4>2.2.5 尚未解决的问题</h4>
+<ul>
+<li>仍然是固定宽标量量化，不能利用多个坐标之间的联合码本增益；</li>
+<li>2.3 BPE 并非纯 2-bit，第二 scale 和量化元数据必须纳入物理内存；</li>
+<li>论文没有与稍后/同期的 OSCAR、NOVA-KV 在同一 harness 中做完整比较；</li>
+<li>不适用于不使用 KV Cache 的 SSM；</li>
+<li>MLA 等训练期已压缩注意力结构对 VarN 的影响仍不明确；</li>
+<li>在线 block 归一化引入状态与调度约束，跨 backend、分页布局和 CUDA Graph 的成熟度仍需验证；</li>
+<li>论文作者明确指出，公开 serving 框架对 INT2 KV 的支持仍限制完整端到端评测。</li>
+</ul>
+<h3 id="2-3-oscar-与-kvarn-互补而非简单替代">2.3 OSCAR 与 KVarN：互补而非简单替代</h3>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>维度</th>
+<th>OSCAR</th>
+<th>KVarN</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>主要问题</td>
+<td>哪些方向最影响 attention</td>
+<td>哪些 token 的 scale error 会随生成累积</td>
+</tr>
+<tr>
+<td>统计位置</td>
+<td>部署前离线校准</td>
+<td>推理中按 block 在线统计</td>
+</tr>
+<tr>
+<td>变换</td>
+<td>attention-aware谱旋转 + Hadamard/置换</td>
+<td>Hadamard + token/channel双轴VarN</td>
+</tr>
+<tr>
+<td>量化器</td>
+<td>asymmetric INT2 SQ</td>
+<td>RTN INT2 SQ + 第二 scale</td>
+</tr>
+<tr>
+<td>主要优点</td>
+<td>下游目标明确、系统链完整</td>
+<td>calibration-free、直接针对decode累积</td>
+</tr>
+<tr>
+<td>主要风险</td>
+<td>跨模型和prefill语义鲁棒性</td>
+<td>在线状态、双scale与backend集成</td>
+</tr>
+</tbody>
+</table></div>
+<p>一个自然研究方向是把 OSCAR 的离线敏感方向与 KVarN 的在线 token-scale 修正结合，但当前没有论文证明二者叠加不会破坏 scale、rotation folding 或 kernel layout。</p>
+<h2 id="3-主题二-向量量化与变换编码">3. 主题二：向量量化与变换编码</h2>
+<p>标量量化独立编码每个坐标；向量量化将 $g$ 个坐标组成 subvector，用一个 index 指向码字：</p>
+<p>$$
+j^*=\arg\min_{j\in\{1,\dots,|\mathcal C|\}}
+\lVert x-\mathcal C_j\rVert_2^2.
+$$</p>
+<p>若每组维度为 $g$、平均每坐标为 $b$ bit，则：</p>
+<p>$$
+|\mathcal C|=2^{gb}.
+$$</p>
+<p>VQ 能利用坐标相关性，低码率表达能力通常强于 SQ；代价是码本训练、index gather、shared-memory压力和写入时的最近邻搜索。</p>
+<h3 id="3-1-vecinfer-先抑制-k-outlier-再让码本覆盖数据空间">3.1 VecInfer：先抑制 K outlier，再让码本覆盖数据空间</h3>
+<p>论文与代码：</p>
+<ul>
+<li>论文：<a href="https://arxiv.org/abs/2510.06175">VecInfer: Efficient LLM Inference with Low-Bit KV Cache via Outlier-Suppressed Vector Quantization</a></li>
+<li>代码：<a href="https://github.com/ydyhello/VecInfer">ydyhello/VecInfer</a></li>
+</ul>
+<h4>3.1.1 主要观察</h4>
+<p>VecInfer 观察到，已有 VQ 在超低 bit 下并不稳定，关键原因是 K cache 的 channel variation 和 outlier：</p>
+<ul>
+<li>少数极值会占据码本表示范围；</li>
+<li>码字集中服务 outlier，普通区域覆盖不足；</li>
+<li>低码率时 codebook utilization 急剧恶化；</li>
+<li>直接增大码本会提高表示能力，却增加 shared-memory 和查表开销。</li>
+</ul>
+<h4>3.1.2 核心创新</h4>
+<p>VecInfer 对 Q/K 使用保持点积等价的 dual transform：</p>
+<p>$$
+Q\leftarrow Q\operatorname{diag}(\lambda),
+\qquad
+K\leftarrow K\operatorname{diag}(\lambda)^{-1},
+$$</p>
+<p>再对二者施加相同 Hadamard：</p>
+<p>$$
+Q\leftarrow QH,
+\qquad K\leftarrow KH.
+$$</p>
+<p>因为 $HH^\top=I$，attention logit 在无量化时保持不变。Smooth 先减少 channel range 差异，Hadamard 再把残余 outlier扩散到各坐标。</p>
+<p>其工程创新包括：</p>
+<ul>
+<li>K/V 都支持 subvector VQ；</li>
+<li>支持 K/V 不同比特分配；</li>
+<li>用离线 K-means 训练可跨任务复用的 codebook；</li>
+<li>将 dequantization、codebook lookup 与 attention 融合为 CUDA kernel；</li>
+<li>用细粒度 tiled computation 和异步流水降低全局内存访问。</li>
+</ul>
+<h4>3.1.3 取得的效果</h4>
+<p>LongBench 平均分：</p>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>模型</th>
+<th style="text-align:right">BF16</th>
+<th style="text-align:right">VecInfer 2 bit</th>
+<th style="text-align:right">1.5 bit</th>
+<th style="text-align:right">1.25 bit</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Llama-3.1-8B</td>
+<td style="text-align:right">53.7</td>
+<td style="text-align:right">52.7</td>
+<td style="text-align:right">51.8</td>
+<td style="text-align:right">50.3</td>
+</tr>
+<tr>
+<td>Mistral-7B</td>
+<td style="text-align:right">51.5</td>
+<td style="text-align:right">50.3</td>
+<td style="text-align:right">48.0</td>
+<td style="text-align:right">46.5</td>
+</tr>
+</tbody>
+</table></div>
+<p>这说明 VecInfer 在 1.25–1.5 bit 下是渐进退化，而 KIVI/MILLION 等基线在 1.5 bit 下出现接近崩塌的结果。</p>
+<p>效率方面，论文在 Llama-3.1-8B、H100、约 196K sequence 上报告：</p>
+<ul>
+<li>2-bit self-attention 最高约 2.0–2.7 倍加速，取决于 batch；</li>
+<li>单 batch、192K input、129 output 时，2-bit 配置相对论文所用对照实现取得约 $8.3\times$ 端到端 decoding 加速，即延迟约降至对照的 $1/8.3$；</li>
+<li>变换本身开销很小，主要收益来自压缩读取和融合 kernel。</li>
+</ul>
+<p>这些倍数是 VecInfer 自己的硬件、baseline 和 196K 场景，不能直接与 NOVA-KV/OSCAR 的 SGLang 数字横比。</p>
+<h4>3.1.4 码本大小观察</h4>
+<p>VecInfer 在相同平均 bit 下改变 subvector 维度和码本大小：</p>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th style="text-align:right">平均 bit</th>
+<th>配置</th>
+<th style="text-align:right">码本数</th>
+<th style="text-align:right">Llama平均分</th>
+<th style="text-align:right">Mistral平均分</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align:right">2</td>
+<td>d8b16</td>
+<td style="text-align:right">65,536</td>
+<td style="text-align:right">52.8</td>
+<td style="text-align:right">50.5</td>
+</tr>
+<tr>
+<td style="text-align:right">2</td>
+<td>d4b8</td>
+<td style="text-align:right">256</td>
+<td style="text-align:right">52.7</td>
+<td style="text-align:right">50.3</td>
+</tr>
+<tr>
+<td style="text-align:right">2</td>
+<td>d2b4</td>
+<td style="text-align:right">16</td>
+<td style="text-align:right">52.6</td>
+<td style="text-align:right">49.7</td>
+</tr>
+<tr>
+<td style="text-align:right">1.5</td>
+<td>d8b12</td>
+<td style="text-align:right">4,096</td>
+<td style="text-align:right">51.8</td>
+<td style="text-align:right">48.0</td>
+</tr>
+<tr>
+<td style="text-align:right">1.5</td>
+<td>d4b6</td>
+<td style="text-align:right">64</td>
+<td style="text-align:right">50.2</td>
+<td style="text-align:right">47.1</td>
+</tr>
+<tr>
+<td style="text-align:right">1.5</td>
+<td>d2b3</td>
+<td style="text-align:right">8</td>
+<td style="text-align:right">49.1</td>
+<td style="text-align:right">45.1</td>
+</tr>
+</tbody>
+</table></div>
+<p>2 bit 时扩大码本收益很小，因此 d4b8 是更合理的精度/硬件折中；1.5 bit 时大码本更重要，但 4096 个8维码字会显著增加 shared-memory 压力。</p>
+<h4>3.1.5 解决的问题</h4>
+<ul>
+<li>把 VQ 在超低 bit 下的失败定位到 K outlier 与码本覆盖不足；</li>
+<li>给出 1.25–4 bit 的较完整 rate-quality ladder；</li>
+<li>证明 2 bit 以下不一定必然崩塌；</li>
+<li>把 VQ 从离线压缩推进到融合 attention kernel；</li>
+<li>验证 codebook 在不同任务校准数据之间具有一定迁移性。</li>
+</ul>
+<h4>3.1.6 尚未解决的问题</h4>
+<ul>
+<li>transform 以 outlier suppression 和分布 flattening 为启发式目标，没有直接优化 query/attention-product sensitivity；</li>
+<li><code>Avg. bit</code> 主要表示 VQ index payload，不能直接等同于含全部元数据的有效 BPE；</li>
+<li>大码本带来 shared-memory、lookup 和 occupancy 代价；</li>
+<li>写路径仍需 VQ encoding，在线新 token 的最近邻搜索成本不可忽略；</li>
+<li>作者明确指出与 sparse attention/mixed precision 的组合尚未系统研究；</li>
+<li>尚未无缝集成通用 vLLM/SGLang 接口，部署依赖定制 kernel；</li>
+<li>没有覆盖 NOVA-KV 所测试的 GPT-OSS hybrid-attention/MoE 失败场景。</li>
+</ul>
+<h3 id="3-2-nova-kv-让-bit-花在-query-真正关注的方向">3.2 NOVA-KV：让 bit 花在 query 真正关注的方向</h3>
+<p>论文与代码：</p>
+<ul>
+<li>论文：<a href="https://arxiv.org/abs/2608.04074">Spend Bits Where Queries Look: KV Cache Vector Quantization with Attention-Preserving Transforms</a></li>
+<li>代码：<a href="https://github.com/Amir-zsh/nova-kv">Amir-zsh/nova-kv</a></li>
+</ul>
+<h4>3.2.1 主要观察</h4>
+<p>NOVA-KV 的两个关键观察是：</p>
+<ol>
+<li>原始 K MSE 最低的 basis，不一定最能保持 attention top-1 key；真正相关的是 query-weighted K error；</li>
+<li>正交 rotation只能重排/摊平能量，不能实现经典 transform coding 的能量压缩；但非正交能量压缩后，如果仍给每个坐标相同 bit 的 SQ，又会因为系数尺度差异而崩塌。</li>
+</ol>
+<p>论文还用 GPT-OSS-20B 展示了“相同 raw K reconstruction SNR，不同模型 attention-logit error 可差数倍”的现象：高信息密度的少数 full-attention layer 和 MoE router 对量化噪声更敏感。</p>
+<h4>3.2.2 核心创新</h4>
+<p>NOVA-KV 从 attention output error 出发，将一阶主项分为 K 路径和 V 路径：</p>
+<p>$$
+\lVert SV-\widehat S\widehat V\rVert_F^2.
+$$</p>
+<p>K 侧用 query second moment：</p>
+<p>$$
+M_q=Q^\top Q,
+$$</p>
+<p>推导非正交变换：</p>
+<p>$$
+R_K=M_q^{1/2}E,
+$$</p>
+<p>并满足 generalized Parseval relation：</p>
+<p>$$
+\lVert r-\widehat r\rVert_2^2
+=\lVert k-\widehat k\rVert_{M_q}^2.
+$$</p>
+<p>这意味着在 transform domain 中使用普通 MSE-optimal VQ，等价于控制原空间的 query-weighted key error。</p>
+<p>V 侧推导结果为：</p>
+<p>$$
+M_o=V^\top S^\top SV,
+$$</p>
+<p>其特征向量与 OSCAR 的 V covariance rotation 本质一致。因此 NOVA 在 V 侧继承并理论化了 OSCAR 的设计，而核心新增主要位于 K 侧。</p>
+<p>为满足 serving 的固定宽 layout，NOVA 不采用串行 entropy coding，而是：</p>
+<ul>
+<li>将 transform coefficients 按 $g=4$ 分组；</li>
+<li>根据每组协方差体积做 volume-equalizing partition；</li>
+<li>所有组使用同样大小的 256-entry codebook；</li>
+<li>分组置换折叠进 transform，不增加在线读路径操作。</li>
+</ul>
+<p>部署版实际是混合方案：</p>
+<ul>
+<li>K：4维 VQ，256-entry codebook，8-bit index，即平均 2 bit/coordinate；</li>
+<li>V：沿用 OSCAR 风格的 per-token affine INT2 SQ；</li>
+<li>sink/recent 64/256 token 保持 BF16。</li>
+</ul>
+<h4>3.2.3 BPE 与效果</h4>
+<p>NOVA-KV 在 Qwen/Llama 的 128K 条件下给出：</p>
+<p>$$
+\begin{aligned}
+K &amp;: 2+16/128=2.125\ \text{BPE},\\
+V &amp;: 2+32/128=2.250\ \text{BPE},\\
+\operatorname{Avg}(K,V)&amp;=2.1875,\\
+\text{含 BF16 band}&amp;\approx2.22\ \text{BPE}.
+\end{aligned}
+$$</p>
+<p>OSCAR 同条件为 2.28 BPE；差值只有0.06 BPE，来自 OSCAR 的 K 侧 zero-point，而不是 VQ 带来了大幅额外压缩：</p>
+<p>$$
+1-\frac{2.22}{2.28}\approx2.6\%.
+$$</p>
+<p>主要质量结果：</p>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>模型</th>
+<th>指标</th>
+<th style="text-align:right">BF16</th>
+<th style="text-align:right">OSCAR</th>
+<th style="text-align:right">NOVA-KV</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Qwen3-4B-Thinking</td>
+<td>RULER 128K</td>
+<td style="text-align:right">89.9</td>
+<td style="text-align:right">34.7</td>
+<td style="text-align:right">79.2</td>
+</tr>
+<tr>
+<td>Qwen3-8B</td>
+<td>RULER 128K</td>
+<td style="text-align:right">83.4</td>
+<td style="text-align:right">25.3</td>
+<td style="text-align:right">75.4</td>
+</tr>
+<tr>
+<td>Llama-3.1-8B</td>
+<td>RULER 128K</td>
+<td style="text-align:right">84.2</td>
+<td style="text-align:right">36.7</td>
+<td style="text-align:right">63.3</td>
+</tr>
+<tr>
+<td>GPT-OSS-20B</td>
+<td>RULER 128K</td>
+<td style="text-align:right">80.4</td>
+<td style="text-align:right">0.0</td>
+<td style="text-align:right">54.0</td>
+</tr>
+<tr>
+<td>GPT-OSS-20B</td>
+<td>五任务均值</td>
+<td style="text-align:right">76.5</td>
+<td style="text-align:right">13.9</td>
+<td style="text-align:right">72.4</td>
+</tr>
+</tbody>
+</table></div>
+<p>将 V 也改为 VQ 后，Qwen3-8B 的有效 BPE 可降到2.16，RULER 128K为76.1–76.7，与部署版2.22 BPE/75.4相近；作者为简化 read path 没有采用该配置。</p>
+<h4>3.2.4 变换与量化器交叉消融</h4>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>Transform</th>
+<th>Quantizer</th>
+<th style="text-align:right">BPE</th>
+<th style="text-align:right">RULER 64K</th>
+<th style="text-align:right">RULER 128K</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>OSCAR</td>
+<td>SQ</td>
+<td style="text-align:right">2.28</td>
+<td style="text-align:right">60.6</td>
+<td style="text-align:right">25.3</td>
+</tr>
+<tr>
+<td>OSCAR</td>
+<td>VQ</td>
+<td style="text-align:right">2.22</td>
+<td style="text-align:right">68.1</td>
+<td style="text-align:right">62.7</td>
+</tr>
+<tr>
+<td>NOVA</td>
+<td>SQ</td>
+<td style="text-align:right">2.28</td>
+<td style="text-align:right">0.0</td>
+<td style="text-align:right">0.0</td>
+</tr>
+<tr>
+<td>NOVA</td>
+<td>VQ</td>
+<td style="text-align:right">2.22</td>
+<td style="text-align:right">76.4</td>
+<td style="text-align:right">75.4</td>
+</tr>
+</tbody>
+</table></div>
+<p>该表说明：</p>
+<ul>
+<li>VQ 本身贡献很大；</li>
+<li>NOVA 非正交 transform 在 VQ 下继续提供增益；</li>
+<li>NOVA transform会做能量压缩，若错误地接固定 rate SQ，反而完全崩塌；</li>
+<li>所以 NOVA 不是可以把任意 rotation 与任意 quantizer随意拼装的“综合版”。</li>
+</ul>
+<h4>3.2.5 速度与码本成本</h4>
+<p>单 H100、Qwen3-8B、8K context 的每步 kernel time：</p>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th style="text-align:right">Batch</th>
+<th style="text-align:right">OSCAR</th>
+<th style="text-align:right">NOVA CUDA</th>
+<th style="text-align:right">NOVA相对OSCAR</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align:right">1</td>
+<td style="text-align:right">8.2 ms</td>
+<td style="text-align:right">9.0 ms</td>
+<td style="text-align:right">慢约10%</td>
+</tr>
+<tr>
+<td style="text-align:right">32</td>
+<td style="text-align:right">15.5 ms</td>
+<td style="text-align:right">18.3 ms</td>
+<td style="text-align:right">慢约18%</td>
+</tr>
+<tr>
+<td style="text-align:right">64</td>
+<td style="text-align:right">23.1 ms</td>
+<td style="text-align:right">28.8 ms</td>
+<td style="text-align:right">慢约25%</td>
+</tr>
+<tr>
+<td style="text-align:right">128</td>
+<td style="text-align:right">39.3 ms</td>
+<td style="text-align:right">49.7 ms</td>
+<td style="text-align:right">慢约26%</td>
+</tr>
+</tbody>
+</table></div>
+<p>原因包括：codebook indirect gather、更多反量化指令、每步 query preparation，以及写路径的最近邻 VQ encoding。手写 CUDA 已将 batch 128 attention read 从 Triton 的48.9 ms降到36.4 ms，但仍高于 OSCAR 的31.6 ms。</p>
+<p>另一方面，在主文 30K/60K/90K decode-only throughput 中，长 cache 的显存带宽占主导，作者报告 NOVA 与 OSCAR多数配置只差几个百分点。因此不能概括成“NOVA总是更慢”；准确说法是：<strong>两者长上下文吞吐接近，但 NOVA 的 VQ 路径确实更重，短 context或大batch micro-profile差距明显。</strong></p>
+<p>模型级 transform和codebook不计入主表2.22 BPE。Qwen3-8B约需0.30 Gbit，即37.5 MB；单条128K请求摊销约0.03 BPE，较大batch时低于0.01 BPE。</p>
+<h4>3.2.6 解决的问题</h4>
+<ul>
+<li>将 KV 量化正式写成 attention-product rate-distortion 问题；</li>
+<li>给出 K 侧非正交、query-aware transform，而非经验式正交旋转；</li>
+<li>用 generalized Parseval 将 attention-weighted误差转成普通VQ MSE；</li>
+<li>用等体积分组解决能量压缩与固定宽 layout 的冲突；</li>
+<li>在 GPT-OSS 上展示 VQ 相比 2-bit SQ 的表达能力优势；</li>
+<li>实现 codebook lookup、反量化与 attention 的融合读路径。</li>
+</ul>
+<h4>3.2.7 尚未解决的问题</h4>
+<ul>
+<li>没有 NOVA 自身 1/1.5-bit 的完整任务精度阶梯；</li>
+<li>16/64/256/1024码字实验主要报告离线失真，没有完整 accuracy/latency/memory 联合消融；</li>
+<li>K/V joint quantization被作者明确列为 future work，部署版仍只有K使用VQ；</li>
+<li>high-resolution、independent-Gaussian理论在2 bit下只是设计原则，不是有限码率保证；</li>
+<li>每层、每KV head、每group独立码本增加校准、存储和部署复杂度；</li>
+<li>main throughput排除了prefill/TTFT，并关闭跨请求prefix sharing；</li>
+<li>chunked prefill存在dequantization leak，严格关闭时需在prefill完成前保留接近BF16的in-flight副本，牺牲部分峰值内存；</li>
+<li>尚未证明在通用vLLM、多GPU backend和更大模型上具有同样收益。</li>
+</ul>
+<h3 id="3-3-vecinfer-与-nova-kv-不是简单的前后代关系">3.3 VecInfer 与 NOVA-KV：不是简单的前后代关系</h3>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>维度</th>
+<th>VecInfer</th>
+<th>NOVA-KV</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>主要观察</td>
+<td>K outlier浪费码本覆盖</td>
+<td>raw MSE与attention fidelity不一致</td>
+</tr>
+<tr>
+<td>K transform</td>
+<td>Smooth + Hadamard，目标是flatten</td>
+<td>query-aware非正交变换，目标是energy compaction</td>
+</tr>
+<tr>
+<td>K量化</td>
+<td>VQ</td>
+<td>VQ</td>
+</tr>
+<tr>
+<td>V量化</td>
+<td>VQ</td>
+<td>部署版仍为SQ</td>
+</tr>
+<tr>
+<td>码本</td>
+<td>强调task-independent迁移</td>
+<td>每层、每KV-head、每group专用</td>
+</tr>
+<tr>
+<td>固定rate处理</td>
+<td>直接选择subvector/index组合</td>
+<td>volume-equalized grouping理论</td>
+</tr>
+<tr>
+<td>rate ladder</td>
+<td>1.25–4 bit任务结果较完整</td>
+<td>任务主结果集中于约2.22 BPE</td>
+</tr>
+<tr>
+<td>系统</td>
+<td>定制融合CUDA</td>
+<td>SGLang研究分支，Triton/CUDA lookup kernel</td>
+</tr>
+</tbody>
+</table></div>
+<p>可以把 NOVA 理解为“attention-aware transform + VQ”的更理论化版本，但不能称为“VecInfer + OSCAR”的直接合并：</p>
+<ul>
+<li>NOVA论文没有在同一 harness中直接比较VecInfer；</li>
+<li>VecInfer主动摊平能量，NOVA主动压缩能量，两种transform目的相反；</li>
+<li>NOVA的V侧与OSCAR高度一致，但K侧是全新的非正交推导；</li>
+<li>VQ是经典量化工具，使用VQ不等于继承了VecInfer的全部设计。</li>
+</ul>
+<h2 id="4-主题三-query-agnostic-淘汰后的学习式信息恢复">4. 主题三：Query-Agnostic 淘汰后的学习式信息恢复</h2>
+<h3 id="4-1-restorekv-从-选谁留下-转向-补回丢失信息">4.1 RestoreKV：从“选谁留下”转向“补回丢失信息”</h3>
+<p>论文与代码：</p>
+<ul>
+<li>论文：<a href="https://arxiv.org/abs/2608.01247">RestoreKV: Recovering Full-Cache Behavior Under Aggressive Query-Agnostic KV Cache Eviction</a></li>
+<li>代码：<a href="https://github.com/cvsp-lab/RestoreKV">cvsp-lab/RestoreKV</a></li>
+</ul>
+<h4>4.1.1 主要观察</h4>
+<p>Query-agnostic eviction需要把同一个压缩prefix cache复用于任意future query。在这种条件下，未来问题不可见，单纯改进 importance scorer 仍有基本限制：</p>
+<ul>
+<li>被删除的信息依赖具体上下文；</li>
+<li>一个原始 KV pair是否“当前不重要”，不代表对未来query不重要；</li>
+<li>极紧预算下，无论选择策略多聪明，都可能无法用少量原始token覆盖上下文全部语义；</li>
+<li>但“如何把丢失信息生成成紧凑补码”的机制，可以跨context共享。</li>
+</ul>
+<h4>4.1.2 核心创新</h4>
+<p>RestoreKV 在完整context prefill后、真正eviction前执行一次restore pass：</p>
+<ol>
+<li>加入默认8个learned restore-token embeddings；</li>
+<li>restore tokens位于$T+1,\dots,T+n$，通过一次causal pass读取完整KV；</li>
+<li>仅这一次pass启用LoRA，生成每层、每KV head的context-conditioned restore KV；</li>
+<li>base evictor仍负责原始KV打分和保留；</li>
+<li>restore cache与retained original KV共享同一总slot预算；</li>
+<li>后续所有query和decode关闭LoRA，恢复原始冻结backbone。</li>
+</ol>
+<p>预算匹配为：</p>
+<p>$$
+\widetilde{\mathcal C}
+=\operatorname{Retain}(\mathcal C,B-nLH)
+\cup\mathcal C_{\mathrm{restore}},
+$$</p>
+<p>其中$n$是restore token数，$L$是层数，$H$是KV head数。因此结果不是通过偷偷增加KV预算获得。</p>
+<p>训练采用冻结full-cache模型自蒸馏：</p>
+<ul>
+<li>teacher先用full cache产生答案；</li>
+<li>full-cache teacher与restored-cache student评估同一答案；</li>
+<li>最小化token平均的symmetric KL；</li>
+<li>只训练restore embeddings和LoRA，约0.4% backbone参数；</li>
+<li>query和teacher answer只用于离线蒸馏target，生成restore cache本身不观察query，仍保持query-agnostic。</li>
+</ul>
+<h4>4.1.3 取得的效果</h4>
+<p>在Qwen3-4B上，RestoreKV与五个base eviction方法、四个任务、三个预算组成60组matched-budget比较，提升59组。典型结果：</p>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>方法</th>
+<th style="text-align:right">RULER-4K，20%预算</th>
+<th style="text-align:right">10%预算</th>
+<th style="text-align:right">5%预算</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>KVzip</td>
+<td style="text-align:right">91.4</td>
+<td style="text-align:right">80.1</td>
+<td style="text-align:right">38.2</td>
+</tr>
+<tr>
+<td>KVzip + RestoreKV</td>
+<td style="text-align:right">93.5</td>
+<td style="text-align:right">88.8</td>
+<td style="text-align:right">73.2</td>
+</tr>
+<tr>
+<td>KVzip+</td>
+<td style="text-align:right">91.3</td>
+<td style="text-align:right">84.8</td>
+<td style="text-align:right">51.6</td>
+</tr>
+<tr>
+<td>KVzip+ + RestoreKV</td>
+<td style="text-align:right">93.3</td>
+<td style="text-align:right">89.7</td>
+<td style="text-align:right">70.7</td>
+</tr>
+</tbody>
+</table></div>
+<p>在KVPress benchmark中，RestoreKV应用到KVzip+后，在16倍压缩下达到86.4 RULER accuracy。</p>
+<p>机制分析显示，在Qwen3-4B、5%预算下：</p>
+<ul>
+<li>final query对非sink context的attention mass从0.56%恢复到1.30%；</li>
+<li>相对full-cache attention的KL从0.198降到0.167，下降约16%；</li>
+<li>从full cache生成restore states比从已evicted cache生成高8.8点，即73.2 vs 64.4。</li>
+</ul>
+<p>restore token数量并非越多越好：</p>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th style="text-align:right">restore tokens</th>
+<th style="text-align:right">1</th>
+<th style="text-align:right">2</th>
+<th style="text-align:right">4</th>
+<th style="text-align:right">8</th>
+<th style="text-align:right">16</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align:right">RULER 5%预算</td>
+<td style="text-align:right">65.3</td>
+<td style="text-align:right">70.4</td>
+<td style="text-align:right">68.5</td>
+<td style="text-align:right">73.2</td>
+<td style="text-align:right">69.1</td>
+</tr>
+</tbody>
+</table></div>
+<p>更多restore token会挤占原始retained KV的slot，默认8是当前实验的折中，而非普适最优值。</p>
+<p>效率方面，Llama-3.1-8B、32K、RTX PRO 6000上：</p>
+<ul>
+<li>restore pass增加0.03–0.04秒，不到含prefill cache construction的0.5%；</li>
+<li>LoRA常驻使prefill峰值显存增加84 MB，约0.4%；</li>
+<li>decode阶段总KV预算、attention latency与base KVzip近乎相同；</li>
+<li>预算从100%降到5%时，KV显存对两者都从4.20 GB降至0.20 GB。</li>
+</ul>
+<h4>4.1.4 解决的问题</h4>
+<ul>
+<li>给query-agnostic eviction增加“信息恢复”维度，不再只优化原始token选择；</li>
+<li>restore cache由full context条件化，能编码随后被删除token的信息；</li>
+<li>与KVzip、KVzip+、ContrastKV、SnapKV、H2O等不同evictor组合；</li>
+<li>保持相同query-time KV预算，不增加decode cache大小；</li>
+<li>LoRA只在一次restore pass启用，不改变后续每步backbone；</li>
+<li>自蒸馏只训练0.4%参数，无任务特定fine-tuning。</li>
+</ul>
+<h4>4.1.5 尚未解决的问题</h4>
+<ul>
+<li>不是training-free：每个backbone需要restore embeddings、LoRA和离线蒸馏；</li>
+<li>restore pass前必须先形成完整KV，因此不消除full-context prefill峰值；</li>
+<li>固定少量restore states没有对任意future query的无损保证；</li>
+<li>训练时的evictor、budget range与推理时配置可能mismatch；</li>
+<li>默认8个restore token只在当前模型/任务上较优；</li>
+<li>只验证query-agnostic eviction，没有验证restore states再做INT2/VQ后的质量；</li>
+<li>没有证明与OSCAR、KVarN、VecInfer或NOVA叠加后仍能保持attention恢复；</li>
+<li>相比纯eviction，增加了模型级LoRA权重、训练流程和一次cache-construction pass。</li>
+</ul>
+<h3 id="4-2-restorekv-与前两个主题的关系">4.2 RestoreKV 与前两个主题的关系</h3>
+<p>RestoreKV与量化在理论上是正交的：</p>
+<p>$$
+C_{\mathrm{total}}
+\approx C_{\mathrm{token}}\times C_{\mathrm{bit}}.
+$$</p>
+<p>例如只保留1/8 token，再把保留KV量化到约2 bit，看起来可能达到约$8\times8=64\times$名义压缩。但这个乘法只对payload近似成立，质量和系统代价不会自动相乘：</p>
+<ul>
+<li>restore KV本身是否量化；</li>
+<li>量化噪声是否破坏restore states浓缩的信息；</li>
+<li>eviction与量化是否同时改变attention分布；</li>
+<li>codebook、LoRA、索引、BF16 band是否计入；</li>
+<li>prefill峰值是否仍需full cache；</li>
+<li>稀疏索引与低bit kernel能否融合。</li>
+</ul>
+<p>因此，RestoreKV可以视为潜在的上层token compressor，OSCAR/KVarN/VecInfer/NOVA是底层representation compressor，但当前五篇论文没有闭合这一组合的端到端证据。</p>
+<h2 id="5-五篇论文横向总表">5. 五篇论文横向总表</h2>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>论文</th>
+<th>主方向</th>
+<th>最关键观察</th>
+<th>核心创新</th>
+<th>代表效果</th>
+<th>最大遗留问题</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>OSCAR</td>
+<td>attention-aware INT2 SQ</td>
+<td>raw K/V MSE不等于attention误差</td>
+<td>离线谱covariance rotation、Hadamard/置换、per-layer clip、INT2 kernel</td>
+<td>约2.28 BPE；原论文多模型接近BF16并报告高吞吐</td>
+<td>固定SQ在GPT-OSS/chunked-prefill等条件可崩塌，跨模型稳定边界不清</td>
+</tr>
+<tr>
+<td>KVarN</td>
+<td>autoregressive INT2 SQ</td>
+<td>长生成退化由少数token-scale error累积主导</td>
+<td>Hadamard + token/channel双轴VarN + 第二scale</td>
+<td>约2.3 BPE；AIME/MATH/HumanEval接近FP16；VarN新增约0.18%量化开销</td>
+<td>MLA/新架构与跨backend适配；仍是SQ；未与OSCAR/NOVA同harness比较</td>
+</tr>
+<tr>
+<td>VecInfer</td>
+<td>outlier-suppressed VQ</td>
+<td>K outlier导致超低bit码本利用率差</td>
+<td>Smooth + Hadamard，K/V VQ，融合CUDA attention</td>
+<td>2 bit接近BF16；1.25–1.5 bit渐进退化；196K报告显著加速</td>
+<td>非attention-aware目标；码本/shared-memory/部署接口复杂</td>
+</tr>
+<tr>
+<td>NOVA-KV</td>
+<td>attention-preserving VQ</td>
+<td>MSE最优basis不一定保持attention；正交rotation限制能量压缩</td>
+<td>非正交K transform、generalized Parseval、等体积分组、固定宽VQ</td>
+<td>Qwen约2.22 BPE；GPT-OSS五任务72.4 vs OSCAR13.9</td>
+<td>只有K部署VQ；缺sub-2bit任务阶梯；write/gather更慢；理论为渐近近似</td>
+</tr>
+<tr>
+<td>RestoreKV</td>
+<td>eviction + learned restoration</td>
+<td>紧预算下只优化“留下谁”不足以保存未知future-query信息</td>
+<td>full-context restore pass、LoRA自蒸馏、budget-matched恢复KV</td>
+<td>5%预算KVzip RULER38.2→73.2；16×时86.4；一次开销&lt;0.5%</td>
+<td>需训练和full-cache prefill；任意future query无保证；未验证与低bit量化组合</td>
+</tr>
+</tbody>
+</table></div>
+<h2 id="6-五篇论文共同推动了什么">6. 五篇论文共同推动了什么</h2>
+<h3 id="6-1-从统一-mse-转向-误差在哪里真正重要">6.1 从统一 MSE 转向“误差在哪里真正重要”</h3>
+<p>五篇论文分别给出五种重要性：</p>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>论文</th>
+<th>认为“重要”的对象</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>OSCAR</td>
+<td>attention covariance的主谱方向</td>
+</tr>
+<tr>
+<td>KVarN</td>
+<td>会造成长生成反馈的少数token-scale outlier</td>
+</tr>
+<tr>
+<td>VecInfer</td>
+<td>影响码本覆盖与利用率的K outlier/channel variation</td>
+</tr>
+<tr>
+<td>NOVA-KV</td>
+<td>query-weighted K误差和attention-weighted V误差</td>
+</tr>
+<tr>
+<td>RestoreKV</td>
+<td>无法由少量retained original tokens表达的上下文补充信息</td>
+</tr>
+</tbody>
+</table></div>
+<p>共同结论是：平均raw MSE已经不足以评价KV压缩。</p>
+<h3 id="6-2-从单次量化转向完整生命周期">6.2 从单次量化转向完整生命周期</h3>
+<div class="mermaid">flowchart LR
+    CAL["离线统计或训练"] --&gt; PREFILL["完整上下文 Prefill"]
+    PREFILL --&gt; BUILD["旋转、量化、淘汰或生成恢复状态"]
+    BUILD --&gt; READ["每步压缩态 Attention Read"]
+    READ --&gt; WRITE["新 token 的 KV 写回"]
+    WRITE --&gt; READ
+
+    O1["OSCAR 与 NOVA：离线统计"] -.-&gt; CAL
+    O2["VecInfer：码本训练"] -.-&gt; CAL
+    O3["RestoreKV：LoRA自蒸馏"] -.-&gt; CAL
+    O4["KVarN：在线block统计"] -.-&gt; BUILD
+</div>
+<p>OSCAR/NOVA强调读路径，VecInfer同时处理码本读写，KVarN强调反复写回后的时间累积，RestoreKV强调prefill后cache construction。它们合在一起说明：KV压缩不再只是一个tensor quantization函数，而是完整的serving lifecycle设计。</p>
+<h2 id="7-尚未被五篇论文共同解决的问题">7. 尚未被五篇论文共同解决的问题</h2>
+<h3 id="7-1-缺少统一-可公平横比的实验合同">7.1 缺少统一、可公平横比的实验合同</h3>
+<p>当前不同论文混用了：</p>
+<ul>
+<li>payload bit 与effective BPE；</li>
+<li>是否计scale、zero-point、codebook、LoRA、索引和BF16 band；</li>
+<li>single-pass prefill与chunked prefill；</li>
+<li>decode-only throughput与端到端TTFT/latency；</li>
+<li>不同GPU、模型、context、batch和kernel成熟度；</li>
+<li>一次性静态误差与真实autoregressive generation。</li>
+</ul>
+<p>所以不能用单个headline数字给五篇论文排绝对名次。</p>
+<h3 id="7-2-低于2-bit的可靠边界仍不清楚">7.2 低于2 bit的可靠边界仍不清楚</h3>
+<ul>
+<li>VecInfer给出了1.25–1.5 bit的较完整任务结果，但统计口径偏index payload；</li>
+<li>NOVA只给出低rate的离线失真曲线，没有完整任务阶梯；</li>
+<li>OSCAR/KVarN仍主要集中在约2.3 effective BPE；</li>
+<li>RestoreKV改变的是token数，不回答每元素低bit问题。</li>
+</ul>
+<h3 id="7-3-组合压缩尚未闭环">7.3 组合压缩尚未闭环</h3>
+<p>仍缺以下受控组合：</p>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>组合</th>
+<th>需要回答的问题</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>RestoreKV + OSCAR/KVarN</td>
+<td>高信息密度restore states能否承受INT2 SQ</td>
+</tr>
+<tr>
+<td>RestoreKV + VecInfer/NOVA</td>
+<td>restore cache是否需要独立码本或更高bit</td>
+</tr>
+<tr>
+<td>OSCAR + KVarN</td>
+<td>离线谱方向与在线双轴scale是否相互破坏</td>
+</tr>
+<tr>
+<td>NOVA K-VQ + V-VQ</td>
+<td>K/V联合优化是否优于当前K-VQ、V-SQ</td>
+</tr>
+<tr>
+<td>eviction + VQ fused kernel</td>
+<td>稀疏索引、分页和codebook lookup能否同时高效</td>
+</tr>
+</tbody>
+</table></div>
+<h3 id="7-4-prefill峰值与prefix复用没有完全解决">7.4 Prefill峰值与prefix复用没有完全解决</h3>
+<ul>
+<li>RestoreKV必须先让restore tokens读取full cache；</li>
+<li>NOVA关闭chunked-prefill leak时需要临时保留精确in-flight rows；</li>
+<li>OSCAR/NOVA吞吐常在预热prefix后只测decode；</li>
+<li>VecInfer主要展示超长decode kernel；</li>
+<li>KVarN关注生成累计，但prefix cache多租户复用仍缺完整评测。</li>
+</ul>
+<h3 id="7-5-架构迁移仍是开放问题">7.5 架构迁移仍是开放问题</h3>
+<p>GPT-OSS已经证明，相同2-bit量化器在不同架构上可能从“接近BF16”变为“完全失效”。需要继续覆盖：</p>
+<ul>
+<li>MLA与latent KV；</li>
+<li>hybrid attention + sliding window；</li>
+<li>MoE router对attention扰动的离散放大；</li>
+<li>GQA/MQA不同KV head共享方式；</li>
+<li>SSM/attention hybrid；</li>
+<li>100B以上模型与多GPU paged cache。</li>
+</ul>
+<h2 id="8-建议的统一复现矩阵">8. 建议的统一复现矩阵</h2>
+<h3 id="8-1-质量与误差">8.1 质量与误差</h3>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>层级</th>
+<th>必测指标</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Tensor</td>
+<td>absolute MSE、NMSE、SQNR、token norm error、clipping rate、codebook utilization</td>
+</tr>
+<tr>
+<td>Attention</td>
+<td>$QK^\top$相对误差、softmax KL、top-1 agreement、$S\Delta V$误差、post-$W_O$误差</td>
+</tr>
+<tr>
+<td>Propagation</td>
+<td>hidden-state NMSE、逐decode-step KL、router expert-set变化</td>
+</tr>
+<tr>
+<td>Task</td>
+<td>reasoning、coding、RULER/LongBench、SCBench多query与真实长生成</td>
+</tr>
+</tbody>
+</table></div>
+<h3 id="8-2-物理内存与速度">8.2 物理内存与速度</h3>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>层级</th>
+<th>必测指标</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>常驻内存</td>
+<td>payload、scale/zero、index、codebook/transform、restore state、page/padding分项</td>
+</tr>
+<tr>
+<td>峰值</td>
+<td>prefill峰值、cache construction峰值、chunked-prefill临时副本</td>
+</tr>
+<tr>
+<td>写路径</td>
+<td>rotation/VarN、SQ pack、VQ nearest-neighbor、restore pass</td>
+</tr>
+<tr>
+<td>读路径</td>
+<td>bit unpack、codebook gather、稀疏索引、attention combine</td>
+</tr>
+<tr>
+<td>服务</td>
+<td>TTFT、TPOT/ITL、decode tok/s、goodput、最大batch、prefix-sharing命中率</td>
+</tr>
+</tbody>
+</table></div>
+<h3 id="8-3-最小公平配置">8.3 最小公平配置</h3>
+<p>建议至少固定：</p>
+<ul>
+<li>同一模型：Qwen3-8B与GPT-OSS-20B；</li>
+<li>同一硬件和 serving commit；</li>
+<li>context：8K、32K、128K；</li>
+<li>batch：1、8、32、最大可容纳batch；</li>
+<li>prefill：single-pass与真实chunked-prefill各一组；</li>
+<li>生成：至少8K真实autoregressive reasoning；</li>
+<li>预算：统一physical bytes，而不是只统一payload bit或retention ratio；</li>
+<li>分别报告本地方法最佳配置和严格matched-budget配置。</li>
+</ul>
+<h2 id="9-工程选型建议">9. 工程选型建议</h2>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>场景</th>
+<th>优先候选</th>
+<th>原因</th>
+<th>必须补测</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>希望最小改动接入INT2</td>
+<td>OSCAR或KVarN</td>
+<td>都保留全token，表示固定宽；KVarN无需离线校准</td>
+<td>当前模型的chunked-prefill和长生成累计</td>
+</tr>
+<tr>
+<td>模型对2-bit SQ高度敏感</td>
+<td>NOVA-KV</td>
+<td>VQ在GPT-OSS上显示明显表达能力优势</td>
+<td>写入开销、码本常驻、目标backend融合</td>
+</tr>
+<tr>
+<td>希望探索1.25–1.5 bit</td>
+<td>VecInfer</td>
+<td>rate ladder和K/V VQ配置更完整</td>
+<td>metadata后的真实BPE、大码本occupancy</td>
+</tr>
+<tr>
+<td>prefix会被多个未知query复用且允许淘汰</td>
+<td>RestoreKV</td>
+<td>query-agnostic且同budget恢复明显</td>
+<td>LoRA训练成本、future-query最坏样例、prefill峰值</td>
+</tr>
+<tr>
+<td>追求极端组合压缩</td>
+<td>RestoreKV + 低bit量化的研究原型</td>
+<td>token轴与bit轴理论互补</td>
+<td>不应直接上线；先验证restore state敏感度和联合kernel</td>
+</tr>
+</tbody>
+</table></div>
+<p>最终建议不是选出一个“全局冠军”，而是按故障模式选方法：</p>
+<ul>
+<li><strong>方向敏感性问题</strong>：优先OSCAR/NOVA；</li>
+<li><strong>token-scale与长生成累积问题</strong>：优先KVarN；</li>
+<li><strong>码本覆盖与低于2-bit问题</strong>：优先VecInfer；</li>
+<li><strong>极低token预算的信息缺失问题</strong>：优先RestoreKV。</li>
+</ul>
+<h2 id="10-证据边界与最终判断">10. 证据边界与最终判断</h2>
+<p>本文数字来自各论文自己的实验或NOVA-KV对OSCAR的同harness复现。除明确标出的NOVA-KV对OSCAR表格外，不把不同论文的speedup、BPE和accuracy当作严格横向排名。</p>
+<p>五篇论文构成了一个清楚的演进链：</p>
+<pre><code class="language-text">随机/经验式低bit量化
+    ↓
+OSCAR：保护attention敏感谱方向
+    ↓
+KVarN：处理真实decode中的token-scale累积
+
+普通VQ在极低bit下失效
+    ↓
+VecInfer：抑制outlier，提高码本利用率
+    ↓
+NOVA-KV：直接推导attention-product rate-distortion与固定宽VQ
+
+单纯选择要保留的token
+    ↓
+RestoreKV：用学习式恢复状态补偿被删信息
+</code></pre>
+<p>最重要的共同启示是：</p>
+<blockquote>
+<p>KV Cache 压缩已经从“把数值压小或删掉token”，转向“识别模型真正敏感的信息、控制误差在生成过程中的传播，并让压缩表示能被serving kernel直接消费”。</p>
+</blockquote>
+<p>但统一物理预算、真实chunked prefill、长生成误差、prefix复用和组合压缩，仍然是这五篇论文共同没有完全解决的部分。</p>
+<h2 id="11-一手来源">11. 一手来源</h2>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>论文</th>
+<th>arXiv</th>
+<th>官方代码/项目</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>OSCAR</td>
+<td><a href="https://arxiv.org/abs/2605.17757">2605.17757</a></td>
+<td><a href="https://github.com/FutureMLS-Lab/OSCAR">FutureMLS-Lab/OSCAR</a></td>
+</tr>
+<tr>
+<td>KVarN</td>
+<td><a href="https://arxiv.org/abs/2606.03458">2606.03458</a></td>
+<td><a href="https://github.com/huawei-csl/KVarN">huawei-csl/KVarN</a></td>
+</tr>
+<tr>
+<td>VecInfer</td>
+<td><a href="https://arxiv.org/abs/2510.06175">2510.06175</a></td>
+<td><a href="https://github.com/ydyhello/VecInfer">ydyhello/VecInfer</a></td>
+</tr>
+<tr>
+<td>NOVA-KV</td>
+<td><a href="https://arxiv.org/abs/2608.04074">2608.04074</a></td>
+<td><a href="https://github.com/Amir-zsh/nova-kv">Amir-zsh/nova-kv</a></td>
+</tr>
+<tr>
+<td>RestoreKV</td>
+<td><a href="https://arxiv.org/abs/2608.01247">2608.01247</a></td>
+<td><a href="https://github.com/cvsp-lab/RestoreKV">cvsp-lab/RestoreKV</a></td>
+</tr>
+</tbody>
+</table></div>
+<p>补充入口：</p>
+<ul>
+<li><a href="https://arxiv.org/html/2608.04074#S5">NOVA-KV HTML：主实验与消融</a></li>
+<li><a href="https://arxiv.org/html/2608.04074#A2.T7">NOVA-KV HTML：kernel breakdown</a></li>
+<li><a href="https://arxiv.org/html/2510.06175#S4.T5">VecInfer HTML：codebook size ablation</a></li>
+<li><a href="https://arxiv.org/html/2608.01247#S4.T1">RestoreKV HTML：跨evictor结果</a></li>
+<li><a href="https://arxiv.org/html/2606.03458#S4.T1">KVarN HTML：reasoning结果</a></li>
+</ul>
+
+    </article>
+  </main>
+  <script>
+    window.addEventListener('DOMContentLoaded', () => {
+      if (window.mermaid) {
+        mermaid.initialize({ startOnLoad: true, theme: 'neutral', securityLevel: 'strict' });
+      }
+    });
+    const fill = document.getElementById('progressFill');
+    window.addEventListener('scroll', () => {
+      const h = document.documentElement.scrollHeight - window.innerHeight;
+      fill.style.width = h > 0 ? `${window.scrollY / h * 100}%` : '0%';
+    }, { passive: true });
+    const links = document.querySelectorAll('#tocList a');
+    const sections = [];
+    links.forEach(a => {
+      const el = document.getElementById(a.getAttribute('href').slice(1));
+      if (el) sections.push({ el, a });
+    });
+    const observer = new IntersectionObserver((entries) => {
+      entries.forEach(entry => {
+        if (entry.isIntersecting) {
+          links.forEach(a => a.classList.remove('active'));
+          const hit = sections.find(s => s.el === entry.target);
+          if (hit) hit.a.classList.add('active');
+        }
+      });
+    }, { threshold: 0.08, rootMargin: '-72px 0px -64% 0px' });
+    sections.forEach(s => observer.observe(s.el));
+  </script>
+</body>
+</html>

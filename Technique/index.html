@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>技术报告分享入口</title>
-  <meta name="description" content="Kimi 系列技术时间线、Kimi K3 核心技术、speculative decoding、DFlash2、Domino 与 Draft 训练框架报告入口。">
+  <meta name="description" content="Kimi、KV Cache 压缩、speculative decoding、DFlash2、Domino 与 Draft 训练框架技术报告入口。">
   <style>
     :root {
       --bg: #eef3f7;
@@ -198,10 +198,28 @@
     <header>
       <div class="eyebrow">Technique Share Index</div>
       <h1>技术报告分享入口</h1>
-      <p class="lead">从这里进入不同粒度的技术报告：Kimi 系列技术路线、Kimi K3 核心技术、speculative decoding 与 DFlash 2 分析。</p>
+      <p class="lead">集中浏览 Kimi 架构、KV Cache 压缩与 speculative decoding 等主题的技术分析、论文对比和工程报告。</p>
     </header>
 
     <section class="grid" aria-label="分享页列表">
+      <a class="card" href="html/kv-cache-compression-three-directions-five-papers-260910/">
+        <div>
+          <div class="tag-row">
+            <span class="tag">KV Cache</span>
+            <span class="tag">INT2</span>
+            <span class="tag">VQ</span>
+            <span class="tag">Eviction</span>
+          </div>
+          <h2>KV Cache 压缩三方向五论文分析</h2>
+          <p>以标量量化、向量量化和 Token 淘汰后恢复三条主线，对比 OSCAR、KVarN、VecInfer、NOVA-KV 与 RestoreKV。</p>
+          <span class="open">打开报告页</span>
+        </div>
+        <div class="meta">
+          <span>入口：<code>html/kv-cache-compression-three-directions-five-papers-260910/</code></span>
+          <span>内容：核心观察、方法创新、实验效果、系统代价与未解决问题</span>
+        </div>
+      </a>
+
       <a class="card" href="html/kimi-k3-core-tech-share-card-260730/">
         <div>
           <div class="tag-row">
